@@ -74,5 +74,43 @@ router.post('/login', async (req, res) => {
   }
 });
 
+const crypto = require('crypto');
+
+router.post('/refresh', async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'refreshToken is required' });
+  }
+
+  try {
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+    const result = await pool.query(
+      'SELECT * FROM refresh_tokens WHERE token_hash = $1 AND expires_at > now()',
+      [tokenHash]
+    );
+    const stored = result.rows[0];
+
+    if (!stored) {
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [stored.user_id]);
+    const user = userResult.rows[0];
+
+    const accessToken = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    res.json({ accessToken });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Refresh failed' });
+  }
+});
+
 
 module.exports = router;
