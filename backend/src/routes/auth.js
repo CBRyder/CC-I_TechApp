@@ -52,15 +52,24 @@ router.post('/login', async (req, res) => {
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
-
-    const accessToken = jwt.sign(
+        const accessToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '15m' }
     );
 
+    const refreshToken = crypto.randomBytes(40).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+    await pool.query(
+      'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [user.id, tokenHash, expiresAt]
+    );
+
     res.json({
       accessToken,
+      refreshToken,
       user: {
         id: user.id,
         full_name: user.full_name,
