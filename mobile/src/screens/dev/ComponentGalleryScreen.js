@@ -11,6 +11,10 @@ import {
   EmptyState,
   ClockBanner,
   JobCard,
+  VisitCard,
+  SegmentedTabs,
+  SearchField,
+  FAB,
   spacing,
 } from '../../ui';
 
@@ -22,6 +26,8 @@ import {
 export default function ComponentGalleryScreen() {
   const [text, setText] = useState('');
   const [clockedIn, setClockedIn] = useState(false);
+  const [tab, setTab] = useState('Today');
+  const [search, setSearch] = useState('');
 
   return (
     <ScreenContainer>
@@ -36,6 +42,46 @@ export default function ComponentGalleryScreen() {
         clockedInSince="7:42 AM"
         onClockIn={() => setClockedIn(true)}
         onClockOut={() => setClockedIn(false)}
+      />
+
+      <SectionHeader>Segmented Tabs</SectionHeader>
+      <SegmentedTabs options={['Past', 'Today', 'Future']} value={tab} onChange={setTab} />
+
+      <SectionHeader>Search Field</SectionHeader>
+      <SearchField
+        value={search}
+        onChangeText={setSearch}
+        placeholder="Search Job #, Property, Customer or Address"
+      />
+
+      <SectionHeader>Visit Card</SectionHeader>
+      <VisitCard
+        state="work"
+        statusLabel="Working"
+        tag="NonBillable"
+        title="Daily clock-in & clock-out"
+        time="7:00 AM"
+        duration="1 hr"
+        onPress={() => {}}
+      />
+      <VisitCard
+        state="work"
+        statusLabel="Working"
+        tag="Install | Job 7488, Visit 2"
+        title="Walgreens 7153"
+        address="2960 Hope Mills Rd, Fayetteville, NC 28306"
+        category="removal / install"
+        time="8:00 AM"
+        duration="1 hr"
+        onPress={() => {}}
+      />
+      <VisitCard
+        state="travel"
+        statusLabel="Traveling"
+        tag="Install | Job 4298, Visit 1"
+        title="Test Plaza"
+        time="9:15 AM"
+        onPress={() => {}}
       />
 
       <SectionHeader>Job Card</SectionHeader>
@@ -105,6 +151,15 @@ export default function ComponentGalleryScreen() {
       <Card>
         <EmptyState message="Nothing here yet — this is what an empty list looks like." />
       </Card>
+
+      {/* FAB is position:absolute against the nearest positioned parent —
+          this wrapper just contains it for the preview. On a real screen,
+          give it a similar `{ position: 'relative', height }` sibling to
+          your ScreenContainer (see FAB.js's comment). */}
+      <SectionHeader>FAB</SectionHeader>
+      <View style={{ height: 90 }}>
+        <FAB onPress={() => {}} />
+      </View>
     </ScreenContainer>
   );
 }

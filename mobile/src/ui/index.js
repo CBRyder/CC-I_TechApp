@@ -10,4 +10,8 @@ export { default as SectionHeader } from './SectionHeader';
 export { default as EmptyState } from './EmptyState';
 export { default as ClockBanner } from './ClockBanner';
 export { default as JobCard } from './JobCard';
+export { default as VisitCard } from './VisitCard';
+export { default as SegmentedTabs } from './SegmentedTabs';
+export { default as SearchField } from './SearchField';
+export { default as FAB } from './FAB';
 export * from './theme';
