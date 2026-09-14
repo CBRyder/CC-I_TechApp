@@ -9,6 +9,8 @@ import {
   ScreenContainer,
   SectionHeader,
   EmptyState,
+  ClockBanner,
+  JobCard,
   spacing,
 } from '../../ui';
 
@@ -19,9 +21,34 @@ import {
 // dev entry point temporarily); delete or keep, it's yours either way.
 export default function ComponentGalleryScreen() {
   const [text, setText] = useState('');
+  const [clockedIn, setClockedIn] = useState(false);
 
   return (
     <ScreenContainer>
+      {/* ClockBanner wants to sit edge-to-edge (no side padding) — here
+          it's shown inside ScreenContainer's padded area just to preview
+          it, but on a real screen you'd usually put it above/outside that
+          padding so it spans the full width. */}
+      <SectionHeader>Clock Banner</SectionHeader>
+      <ClockBanner
+        date={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+        isClockedIn={clockedIn}
+        clockedInSince="7:42 AM"
+        onClockIn={() => setClockedIn(true)}
+        onClockOut={() => setClockedIn(false)}
+      />
+
+      <SectionHeader>Job Card</SectionHeader>
+      <JobCard
+        job={{ job_number: 'J-1001', name: 'HVAC Install - Riverside Office', address: '123 Riverside Dr' }}
+        status="work"
+        onPress={() => {}}
+      />
+      <JobCard
+        job={{ job_number: 'J-1002', name: 'Panel Upgrade - Main St Retail', address: '45 Main St' }}
+        onPress={() => {}}
+      />
+
       <SectionHeader>Buttons</SectionHeader>
       <View style={{ gap: spacing.sm }}>
         <Button variant="primary" onPress={() => {}}>
