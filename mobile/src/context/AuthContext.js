@@ -94,6 +94,14 @@ export function AuthProvider({ children }) {
     }
   }, [logout]);
 
+  // Re-fetches the current user — call after a profile update so things
+  // like the Home screen greeting reflect it immediately.
+  const refreshUser = useCallback(async () => {
+    if (!accessToken) return;
+    const me = await api.getMe(accessToken);
+    setUser(me);
+  }, [accessToken]);
+
   const value = {
     user,
     accessToken,
@@ -104,6 +112,7 @@ export function AuthProvider({ children }) {
     register,
     logout,
     refreshAccessToken,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -81,6 +81,22 @@ export async function initDb() {
       local_uri TEXT NOT NULL,
       uploaded INTEGER NOT NULL DEFAULT 0
     );
+
+    -- Device-only settings (never synced — e.g. theme is a per-device
+    -- display preference, meaningless to carry to another phone).
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT
+    );
+
+    -- Read-through cache of the server's user_preferences, so a synced
+    -- preference (like preferred categories) still applies with no signal.
+    -- Writes go straight to the server (see SettingsContext) — this is only
+    -- refreshed after a successful write or an explicit reload.
+    CREATE TABLE IF NOT EXISTS preferences_cache (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT
+    );
   `);
 }
 
@@ -356,4 +372,54 @@ export async function getUnuploadedPhotosWithSyncedParent() {
      JOIN job_completions jc ON jc.client_id = jcp.job_completion_client_id
      WHERE jcp.uploaded = 0 AND jc.synced = 1`
   );
+}
+
+// --- device-only app settings (theme, etc. — never synced) ---
+
+export async function getAppSetting(key) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(`SELECT value FROM app_settings WHERE key = ?`, [key]);
+  return row?.value ?? null;
+}
+
+export async function setAppSetting(key, value) {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO app_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
+}
+
+// --- synced preferences cache (read-through; writes go to the server) ---
+
+export async function getCachedPreference(key) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(`SELECT value FROM preferences_cache WHERE key = ?`, [key]);
+  return row?.value ?? null;
+}
+
+export async function getAllCachedPreferences() {
+  const db = await getDb();
+  const rows = await db.getAllAsync(`SELECT key, value FROM preferences_cache`);
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+export async function setCachedPreference(key, value) {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO preferences_cache (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
+}
+
+export async function replacePreferencesCache(preferences) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM preferences_cache`);
+    for (const [key, value] of Object.entries(preferences)) {
+      await db.runAsync(`INSERT INTO preferences_cache (key, value) VALUES (?, ?)`, [key, value]);
+    }
+  });
 }

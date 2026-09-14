@@ -65,6 +65,28 @@ export function getMe(accessToken) {
   return request('/me', { accessToken });
 }
 
+export function updateProfile(payload, accessToken) {
+  return request('/me', { method: 'PATCH', body: payload, accessToken });
+}
+
+export function changePassword(payload, accessToken) {
+  return request('/me/change-password', { method: 'POST', body: payload, accessToken });
+}
+
+// --- Preferences ---
+
+export function getPreferences(accessToken) {
+  return request('/preferences', { accessToken });
+}
+
+export function setPreference(key, value, accessToken) {
+  return request(`/preferences/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: { value },
+    accessToken,
+  });
+}
+
 // --- Jobs ---
 
 export function listJobs(accessToken) {

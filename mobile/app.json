@@ -9,7 +9,8 @@
           "photosPermission": "Allow CC-I Tech App to access your photos to attach before/after job photos.",
           "cameraPermission": "Allow CC-I Tech App to use the camera to take before/after job photos."
         }
-      ]
+      ],
+      "expo-notifications"
     ]
   }
 }
