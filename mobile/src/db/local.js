@@ -53,6 +53,17 @@ export async function initDb() {
       unit TEXT NOT NULL
     );
 
+    -- Always holds just the most recently fetched assigned-jobs list (one
+    -- date at a time — Home only ever needs "today").
+    CREATE TABLE IF NOT EXISTS assigned_jobs_cache (
+      id INTEGER PRIMARY KEY NOT NULL,
+      job_number TEXT NOT NULL,
+      name TEXT NOT NULL,
+      address TEXT,
+      customer_name TEXT,
+      status TEXT NOT NULL
+    );
+
     -- Created the instant "Finish" is tapped (queues the job for
     -- completion); filled in and submitted whenever the tech gets to it.
     CREATE TABLE IF NOT EXISTS job_completions (
@@ -207,6 +218,27 @@ export async function replaceJobsCache(jobs) {
 export async function getCachedJobs() {
   const db = await getDb();
   return db.getAllAsync(`SELECT * FROM jobs_cache WHERE status = 'open' ORDER BY job_number`);
+}
+
+// --- assigned jobs cache ("today's jobs" for Home — one date at a time) ---
+
+export async function replaceAssignedJobsCache(jobs) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM assigned_jobs_cache`);
+    for (const job of jobs) {
+      await db.runAsync(
+        `INSERT INTO assigned_jobs_cache (id, job_number, name, address, customer_name, status)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [job.id, job.job_number, job.name, job.address ?? null, job.customer_name ?? null, job.status]
+      );
+    }
+  });
+}
+
+export async function getCachedAssignedJobs() {
+  const db = await getDb();
+  return db.getAllAsync(`SELECT * FROM assigned_jobs_cache ORDER BY job_number`);
 }
 
 // --- parts catalog cache (so the parts picker works with no signal) ---

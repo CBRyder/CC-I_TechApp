@@ -93,6 +93,11 @@ export function listJobs(accessToken) {
   return request('/jobs', { accessToken });
 }
 
+// date: 'YYYY-MM-DD', the device's own local date.
+export function getAssignedJobs(date, accessToken) {
+  return request(`/jobs/assigned?date=${encodeURIComponent(date)}`, { accessToken });
+}
+
 // --- Offline-first sync: upserts by client_id, safe to retry ---
 
 export function syncTimeEntry(payload, accessToken) {

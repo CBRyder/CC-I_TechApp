@@ -9,6 +9,14 @@ import { syncPendingRecords } from '../sync/syncEngine';
 
 const TrackingContext = createContext(null);
 
+// The device's own local date (not UTC) — 'YYYY-MM-DD', matching what the
+// backend's /jobs/assigned expects.
+function todayLocalDate() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now - offset).toISOString().slice(0, 10);
+}
+
 // The local SQLite DB (src/db/local.js) is the real-time source of truth
 // for clock/job state on this device — every action below writes there
 // first and updates the UI immediately, working fully offline. Syncing to
@@ -20,6 +28,7 @@ export function TrackingProvider({ children }) {
   const [timeEntry, setTimeEntry] = useState(null);
   const [activeSegment, setActiveSegment] = useState(null);
   const [jobs, setJobs] = useState([]);
+  const [assignedJobs, setAssignedJobs] = useState([]);
   const [parts, setParts] = useState([]);
 
   const refreshLocalState = useCallback(async () => {
@@ -34,6 +43,7 @@ export function TrackingProvider({ children }) {
     }
 
     setJobs(await local.getCachedJobs());
+    setAssignedJobs(await local.getCachedAssignedJobs());
     setParts(await local.getCachedParts());
   }, []);
 
@@ -52,6 +62,22 @@ export function TrackingProvider({ children }) {
       // Offline or request failed — keep using whatever's already cached.
     }
   }, [accessToken]);
+
+  // "Today's jobs" for Home — the device's own local date, not the
+  // server's. Call with a different date later if you add a day picker.
+  const refreshAssignedJobsFromServer = useCallback(
+    async (date = todayLocalDate()) => {
+      if (!accessToken) return;
+      try {
+        const serverJobs = await api.getAssignedJobs(date, accessToken);
+        await local.replaceAssignedJobsCache(serverJobs);
+        setAssignedJobs(await local.getCachedAssignedJobs());
+      } catch {
+        // Offline or request failed — keep using whatever's already cached.
+      }
+    },
+    [accessToken]
+  );
 
   const refreshPartsFromServer = useCallback(async () => {
     if (!accessToken) return;
@@ -79,9 +105,17 @@ export function TrackingProvider({ children }) {
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
     refreshJobsFromServer();
+    refreshAssignedJobsFromServer();
     refreshPartsFromServer();
     triggerSync();
-  }, [isReady, isAuthenticated, refreshJobsFromServer, refreshPartsFromServer, triggerSync]);
+  }, [
+    isReady,
+    isAuthenticated,
+    refreshJobsFromServer,
+    refreshAssignedJobsFromServer,
+    refreshPartsFromServer,
+    triggerSync,
+  ]);
 
   // Sync triggers: connectivity restored, or app brought back to the
   // foreground. (Expo Go can't run true background sync — this is the
@@ -225,6 +259,7 @@ export function TrackingProvider({ children }) {
     timeEntry,
     activeSegment,
     jobs,
+    assignedJobs,
     parts,
     isClockedIn: !!timeEntry,
     clockIn,
@@ -233,6 +268,7 @@ export function TrackingProvider({ children }) {
     transitionState,
     finishJob,
     refreshJobsFromServer,
+    refreshAssignedJobsFromServer,
     refreshPartsFromServer,
     syncNow: triggerSync,
     // completion details — reads pass straight through to the local DB,
