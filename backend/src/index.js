@@ -1,6 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const authRoutes = require('./routes/auth');
+const jobsRoutes = require('./routes/jobs');
+const timeEntriesRoutes = require('./routes/timeEntries');
+const jobSegmentsRoutes = require('./routes/jobSegments');
 const requireAuth = require('./middleware/auth');
 const pool = require('./db');
 
@@ -13,6 +16,9 @@ app.get('/', (req, res) => {
 });
 
 app.use('/auth', authRoutes);
+app.use('/jobs', jobsRoutes);
+app.use('/time-entries', timeEntriesRoutes);
+app.use('/job-segments', jobSegmentsRoutes);
 
 app.get('/me', requireAuth, async (req, res) => {
   try {
