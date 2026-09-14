@@ -115,4 +115,47 @@ router.post('/current/finish', requireAuth, async (req, res) => {
   }
 });
 
+// Offline-first sync: upserts a job segment the device recorded locally
+// (with its own timestamps), keyed by a client-generated UUID. The parent
+// time entry must already be synced (mobile syncs time entries before their
+// segments) — 409 here just means "retry after the time entry sync lands."
+router.put('/sync', requireAuth, async (req, res) => {
+  const { client_id, time_entry_client_id, job_id, state, started_at, ended_at } = req.body;
+
+  if (!client_id || !time_entry_client_id || !job_id || !state || !started_at) {
+    return res.status(400).json({
+      error: 'client_id, time_entry_client_id, job_id, state, and started_at are required',
+    });
+  }
+  if (!VALID_STATES.includes(state)) {
+    return res.status(400).json({ error: `state must be one of: ${VALID_STATES.join(', ')}` });
+  }
+
+  try {
+    const timeEntryResult = await pool.query(
+      `SELECT id FROM time_entries WHERE user_id = $1 AND client_id = $2`,
+      [req.user.userId, time_entry_client_id]
+    );
+    if (timeEntryResult.rows.length === 0) {
+      return res.status(409).json({ error: 'Parent time entry not synced yet' });
+    }
+    const timeEntryId = timeEntryResult.rows[0].id;
+
+    const result = await pool.query(
+      `INSERT INTO job_segments (time_entry_id, job_id, user_id, client_id, state, started_at, ended_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (user_id, client_id) DO UPDATE
+         SET state = EXCLUDED.state,
+             started_at = EXCLUDED.started_at,
+             ended_at = EXCLUDED.ended_at
+       RETURNING id, client_id, job_id, state, started_at, ended_at`,
+      [timeEntryId, job_id, req.user.userId, client_id, state, started_at, ended_at || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
 module.exports = router;

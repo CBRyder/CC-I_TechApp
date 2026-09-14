@@ -65,4 +65,20 @@ export function getMe(accessToken) {
   return request('/me', { accessToken });
 }
 
+// --- Jobs ---
+
+export function listJobs(accessToken) {
+  return request('/jobs', { accessToken });
+}
+
+// --- Offline-first sync: upserts by client_id, safe to retry ---
+
+export function syncTimeEntry(payload, accessToken) {
+  return request('/time-entries/sync', { method: 'PUT', body: payload, accessToken });
+}
+
+export function syncJobSegment(payload, accessToken) {
+  return request('/job-segments/sync', { method: 'PUT', body: payload, accessToken });
+}
+
 export { ApiError };

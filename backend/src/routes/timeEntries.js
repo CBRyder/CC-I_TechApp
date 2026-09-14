@@ -96,4 +96,32 @@ router.post('/clock-out', requireAuth, async (req, res) => {
   }
 });
 
+// Offline-first sync: the device is the source of truth for clock in/out —
+// this upserts whatever it recorded locally (with its own timestamps) keyed
+// by a client-generated UUID, so retrying a sync after a dropped connection
+// is a no-op instead of creating a duplicate entry.
+router.put('/sync', requireAuth, async (req, res) => {
+  const { client_id, clock_in_at, clock_out_at } = req.body;
+
+  if (!client_id || !clock_in_at) {
+    return res.status(400).json({ error: 'client_id and clock_in_at are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO time_entries (user_id, client_id, clock_in_at, clock_out_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, client_id) DO UPDATE
+         SET clock_in_at = EXCLUDED.clock_in_at,
+             clock_out_at = EXCLUDED.clock_out_at
+       RETURNING id, client_id, clock_in_at, clock_out_at`,
+      [req.user.userId, client_id, clock_in_at, clock_out_at || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
 module.exports = router;

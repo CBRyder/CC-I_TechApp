@@ -73,6 +73,27 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  // For callers (like the offline sync engine) that need a fresh access
+  // token on demand — e.g. after being offline long enough for the 15-minute
+  // access token to expire before signal came back. Re-reads the refresh
+  // token from SecureStore rather than keeping it in JS state.
+  const refreshAccessToken = useCallback(async () => {
+    const storedRefreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
+    if (!storedRefreshToken) throw new Error('No refresh token available');
+
+    try {
+      const { accessToken: newAccessToken } = await api.refresh(storedRefreshToken);
+      setAccessToken(newAccessToken);
+      return newAccessToken;
+    } catch (err) {
+      // Refresh token itself is invalid/expired (e.g. >30 days offline) —
+      // nothing to do but sign out; local unsynced data is untouched and
+      // will sync once the user logs back in.
+      await logout();
+      throw err;
+    }
+  }, [logout]);
+
   const value = {
     user,
     accessToken,
@@ -82,6 +103,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    refreshAccessToken,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
