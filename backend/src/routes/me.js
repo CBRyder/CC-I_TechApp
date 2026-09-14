@@ -11,7 +11,15 @@ router.get('/', requireAuth, async (req, res) => {
       'SELECT id, full_name, email, phone, role, status, created_at FROM users WHERE id = $1',
       [req.user.userId]
     );
-    res.json(result.rows[0]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
+      req.user.userId,
+    ]);
+    user.roles = rolesResult.rows.map((r) => r.role);
+
+    res.json(user);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch user' });

@@ -20,8 +20,16 @@ router.post('/register', async (req, res) => {
        RETURNING id, full_name, email, phone, role, status, created_at`,
       [full_name, email, phone || null, password_hash]
     );
+    const user = result.rows[0];
 
-    res.status(201).json(result.rows[0]);
+    // Every account starts with just its default role — admin (or any
+    // other extra role) has to be granted separately, never self-service.
+    await pool.query(
+      `INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [user.id, user.role]
+    );
+
+    res.status(201).json(user);
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already registered' });
@@ -52,8 +60,14 @@ router.post('/login', async (req, res) => {
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
-        const accessToken = jwt.sign(
-      { userId: user.id, role: user.role },
+
+    const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
+      user.id,
+    ]);
+    const roles = rolesResult.rows.map((r) => r.role);
+
+    const accessToken = jwt.sign(
+      { userId: user.id, roles },
       process.env.JWT_SECRET,
       { expiresIn: '15m' }
     );
@@ -75,6 +89,7 @@ router.post('/login', async (req, res) => {
         full_name: user.full_name,
         email: user.email,
         role: user.role,
+        roles,
       },
     });
   } catch (err) {
@@ -108,8 +123,13 @@ router.post('/refresh', async (req, res) => {
     const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [stored.user_id]);
     const user = userResult.rows[0];
 
+    const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
+      user.id,
+    ]);
+    const roles = rolesResult.rows.map((r) => r.role);
+
     const accessToken = jwt.sign(
-      { userId: user.id, role: user.role },
+      { userId: user.id, roles },
       process.env.JWT_SECRET,
       { expiresIn: '15m' }
     );

@@ -18,4 +18,18 @@ function requireAuth(req, res, next) {
   }
 }
 
+// A user can hold more than one role (see migration 008) — the JWT carries
+// all of them as `roles`, refreshed whenever the access token is. Use
+// alongside requireAuth: `router.post('/x', requireAuth, requireRole('admin'), ...)`.
+function requireRole(role) {
+  return (req, res, next) => {
+    if (!req.user?.roles?.includes(role)) {
+      return res.status(403).json({ error: `Requires the ${role} role` });
+    }
+    next();
+  };
+}
+
 module.exports = requireAuth;
+module.exports.requireAuth = requireAuth;
+module.exports.requireRole = requireRole;
