@@ -5,6 +5,7 @@ import JobSelectionScreen from '../screens/JobSelectionScreen';
 import CompleteJobScreen from '../screens/CompleteJobScreen';
 import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
+import ComponentGalleryScreen from '../screens/dev/ComponentGalleryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -28,6 +29,11 @@ export default function AppStack() {
         options={{ title: 'Parts Used' }}
       />
       <Stack.Screen name="PartsList" component={PartsListScreen} options={{ title: 'Select Part' }} />
+      <Stack.Screen
+        name="ComponentGallery"
+        component={ComponentGalleryScreen}
+        options={{ title: 'Component Gallery' }}
+      />
     </Stack.Navigator>
   );
 }

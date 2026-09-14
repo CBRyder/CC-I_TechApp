@@ -1,10 +1,11 @@
 import React from 'react';
 import { useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { PaperProvider, MD3LightTheme, MD3DarkTheme } from 'react-native-paper';
+import { PaperProvider } from 'react-native-paper';
 import { AuthProvider } from './src/context/AuthContext';
 import { SettingsProvider, useSettings } from './src/context/SettingsContext';
 import { TrackingProvider } from './src/context/TrackingContext';
+import { lightTheme, darkTheme } from './src/ui/theme';
 import RootNavigator from './src/navigation/RootNavigator';
 
 // Reads the theme preference (needs SettingsContext) and applies it to
@@ -14,7 +15,7 @@ function ThemedApp() {
   const systemScheme = useColorScheme();
   const { theme } = useSettings();
   const resolvedScheme = theme === 'system' ? systemScheme : theme;
-  const paperTheme = resolvedScheme === 'dark' ? MD3DarkTheme : MD3LightTheme;
+  const paperTheme = resolvedScheme === 'dark' ? darkTheme : lightTheme;
 
   return (
     <PaperProvider theme={paperTheme}>
