@@ -19,6 +19,32 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+// Admin-only: create a job. Previously jobs could only be seeded via
+// migration — this is what the admin "add a job" screen calls.
+router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
+  const { job_number, name, address, customer_name, total_visits } = req.body;
+
+  if (!job_number || !name) {
+    return res.status(400).json({ error: 'job_number and name are required' });
+  }
+  if (total_visits !== undefined && total_visits !== null && !Number.isInteger(total_visits)) {
+    return res.status(400).json({ error: 'total_visits must be an integer' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO jobs (job_number, name, address, customer_name, total_visits)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, job_number, name, address, customer_name, status, total_visits`,
+      [job_number, name, address || null, customer_name || null, total_visits ?? null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to create job' });
+  }
+});
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // The device's local date, not the server's — a tech in a different
@@ -60,23 +86,57 @@ router.post('/:jobId/assign', requireAuth, requireRole('admin'), async (req, res
   }
 
   try {
-    const jobResult = await pool.query(`SELECT id FROM jobs WHERE id = $1`, [jobId]);
+    const jobResult = await pool.query(`SELECT id, job_number, total_visits FROM jobs WHERE id = $1`, [
+      jobId,
+    ]);
     if (jobResult.rows.length === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
+    const job = jobResult.rows[0];
+
     const userResult = await pool.query(`SELECT id FROM users WHERE id = $1`, [user_id]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Idempotent — assigning the same job/user/date twice is a no-op.
-    await pool.query(
-      `INSERT INTO job_assignments (job_id, user_id, assigned_date)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (job_id, user_id, assigned_date) DO NOTHING`,
-      [jobId, user_id, date]
+    // Ascending per job — visit 1, 2, 3... for this specific job. Computed
+    // here rather than a DB sequence since it needs to reset per job_id;
+    // fine for expected admin-only, low-concurrency usage.
+    const nextVisitResult = await pool.query(
+      `SELECT COALESCE(MAX(visit_number), 0) + 1 AS next FROM job_assignments WHERE job_id = $1`,
+      [jobId]
     );
-    res.status(201).json({ jobId: Number(jobId), userId: Number(user_id), date });
+    const visitNumber = nextVisitResult.rows[0].next;
+
+    // Idempotent — assigning the same job/user/date twice is a no-op (and
+    // doesn't burn a visit number on the second call).
+    const insertResult = await pool.query(
+      `INSERT INTO job_assignments (job_id, user_id, assigned_date, visit_number)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (job_id, user_id, assigned_date) DO NOTHING
+       RETURNING visit_number`,
+      [jobId, user_id, date, visitNumber]
+    );
+    const finalVisitNumber =
+      insertResult.rows[0]?.visit_number ??
+      (
+        await pool.query(
+          `SELECT visit_number FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3`,
+          [jobId, user_id, date]
+        )
+      ).rows[0].visit_number;
+
+    const visitCode = `${job.job_number}-V${finalVisitNumber}${
+      job.total_visits != null ? `-${job.total_visits}` : ''
+    }`;
+
+    res.status(201).json({
+      jobId: Number(jobId),
+      userId: Number(user_id),
+      date,
+      visitNumber: finalVisitNumber,
+      visitCode,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to assign job' });

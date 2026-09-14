@@ -25,6 +25,26 @@ router.put('/sync', requireAuth, async (req, res) => {
     }
     const jobSegmentId = segmentResult.rows[0].id;
 
+    const existing = await pool.query(
+      `SELECT id, visit_summary, submitted_at FROM job_completions WHERE user_id = $1 AND client_id = $2`,
+      [req.user.userId, client_id]
+    );
+    if (existing.rows.length > 0 && existing.rows[0].submitted_at) {
+      const row = existing.rows[0];
+      const isIdenticalRetry =
+        (visit_summary || null) === row.visit_summary && !!submitted_at;
+      if (isIdenticalRetry) {
+        return res.json({
+          id: row.id,
+          client_id,
+          job_segment_id: jobSegmentId,
+          visit_summary: row.visit_summary,
+          submitted_at: row.submitted_at,
+        });
+      }
+      return res.status(409).json({ error: 'This visit is already completed and can no longer be changed' });
+    }
+
     const result = await pool.query(
       `INSERT INTO job_completions (job_segment_id, user_id, client_id, visit_summary, submitted_at)
        VALUES ($1, $2, $3, $4, $5)
@@ -53,11 +73,14 @@ router.put('/parts/sync', requireAuth, async (req, res) => {
 
   try {
     const completionResult = await pool.query(
-      `SELECT id FROM job_completions WHERE user_id = $1 AND client_id = $2`,
+      `SELECT id, submitted_at FROM job_completions WHERE user_id = $1 AND client_id = $2`,
       [req.user.userId, job_completion_client_id]
     );
     if (completionResult.rows.length === 0) {
       return res.status(409).json({ error: 'Parent job completion not synced yet' });
+    }
+    if (completionResult.rows[0].submitted_at) {
+      return res.status(409).json({ error: 'This visit is already completed and can no longer be changed' });
     }
     const jobCompletionId = completionResult.rows[0].id;
 
@@ -89,11 +112,14 @@ router.post('/photos/presign', requireAuth, async (req, res) => {
 
   try {
     const completionResult = await pool.query(
-      `SELECT id FROM job_completions WHERE user_id = $1 AND client_id = $2`,
+      `SELECT id, submitted_at FROM job_completions WHERE user_id = $1 AND client_id = $2`,
       [req.user.userId, job_completion_client_id]
     );
     if (completionResult.rows.length === 0) {
       return res.status(409).json({ error: 'Parent job completion not synced yet' });
+    }
+    if (completionResult.rows[0].submitted_at) {
+      return res.status(409).json({ error: 'This visit is already completed and can no longer be changed' });
     }
     const jobCompletionId = completionResult.rows[0].id;
     const r2Key = `completions/${jobCompletionId}/${kind}/${client_id}.jpg`;
