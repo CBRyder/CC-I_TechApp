@@ -81,4 +81,24 @@ export function syncJobSegment(payload, accessToken) {
   return request('/job-segments/sync', { method: 'PUT', body: payload, accessToken });
 }
 
+export function listParts(accessToken) {
+  return request('/parts', { accessToken });
+}
+
+export function syncJobCompletion(payload, accessToken) {
+  return request('/job-completions/sync', { method: 'PUT', body: payload, accessToken });
+}
+
+export function syncCompletionPart(payload, accessToken) {
+  return request('/job-completions/parts/sync', { method: 'PUT', body: payload, accessToken });
+}
+
+export function presignCompletionPhoto(payload, accessToken) {
+  return request('/job-completions/photos/presign', { method: 'POST', body: payload, accessToken });
+}
+
+export function confirmCompletionPhoto(payload, accessToken) {
+  return request('/job-completions/photos/confirm', { method: 'PUT', body: payload, accessToken });
+}
+
 export { ApiError };

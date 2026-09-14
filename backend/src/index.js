@@ -4,6 +4,8 @@ const authRoutes = require('./routes/auth');
 const jobsRoutes = require('./routes/jobs');
 const timeEntriesRoutes = require('./routes/timeEntries');
 const jobSegmentsRoutes = require('./routes/jobSegments');
+const partsRoutes = require('./routes/parts');
+const jobCompletionsRoutes = require('./routes/jobCompletions');
 const requireAuth = require('./middleware/auth');
 const pool = require('./db');
 
@@ -19,6 +21,8 @@ app.use('/auth', authRoutes);
 app.use('/jobs', jobsRoutes);
 app.use('/time-entries', timeEntriesRoutes);
 app.use('/job-segments', jobSegmentsRoutes);
+app.use('/parts', partsRoutes);
+app.use('/job-completions', jobCompletionsRoutes);
 
 app.get('/me', requireAuth, async (req, res) => {
   try {

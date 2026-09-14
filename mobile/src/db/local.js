@@ -45,6 +45,42 @@ export async function initDb() {
       customer_name TEXT,
       status TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS parts_cache (
+      id INTEGER PRIMARY KEY NOT NULL,
+      category TEXT NOT NULL,
+      name TEXT NOT NULL,
+      unit TEXT NOT NULL
+    );
+
+    -- Created the instant "Finish" is tapped (queues the job for
+    -- completion); filled in and submitted whenever the tech gets to it.
+    CREATE TABLE IF NOT EXISTS job_completions (
+      client_id TEXT PRIMARY KEY NOT NULL,
+      server_id INTEGER,
+      job_segment_client_id TEXT NOT NULL,
+      visit_summary TEXT,
+      submitted_at TEXT,
+      synced INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS job_completion_parts (
+      client_id TEXT PRIMARY KEY NOT NULL,
+      server_id INTEGER,
+      job_completion_client_id TEXT NOT NULL,
+      part_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      synced INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS job_completion_photos (
+      client_id TEXT PRIMARY KEY NOT NULL,
+      server_id INTEGER,
+      job_completion_client_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      local_uri TEXT NOT NULL,
+      uploaded INTEGER NOT NULL DEFAULT 0
+    );
   `);
 }
 
@@ -155,4 +191,169 @@ export async function replaceJobsCache(jobs) {
 export async function getCachedJobs() {
   const db = await getDb();
   return db.getAllAsync(`SELECT * FROM jobs_cache WHERE status = 'open' ORDER BY job_number`);
+}
+
+// --- parts catalog cache (so the parts picker works with no signal) ---
+
+export async function replacePartsCache(parts) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM parts_cache`);
+    for (const part of parts) {
+      await db.runAsync(`INSERT INTO parts_cache (id, category, name, unit) VALUES (?, ?, ?, ?)`, [
+        part.id,
+        part.category,
+        part.name,
+        part.unit,
+      ]);
+    }
+  });
+}
+
+export async function getCachedParts() {
+  const db = await getDb();
+  return db.getAllAsync(`SELECT * FROM parts_cache ORDER BY category, name`);
+}
+
+// --- job completions ---
+
+export async function createJobCompletion(clientId, jobSegmentClientId) {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO job_completions (client_id, job_segment_client_id, synced) VALUES (?, ?, 0)`,
+    [clientId, jobSegmentClientId]
+  );
+}
+
+// Completions not yet submitted — the tech's "still needs details" queue.
+export async function getPendingCompletions() {
+  const db = await getDb();
+  return db.getAllAsync(
+    `SELECT jc.*, js.job_id, j.job_number, j.name AS job_name
+     FROM job_completions jc
+     LEFT JOIN job_segments js ON js.client_id = jc.job_segment_client_id
+     LEFT JOIN jobs_cache j ON j.id = js.job_id
+     WHERE jc.submitted_at IS NULL
+     ORDER BY js.started_at DESC`
+  );
+}
+
+export async function getJobCompletion(clientId) {
+  const db = await getDb();
+  return db.getFirstAsync(
+    `SELECT jc.*, js.job_id, j.job_number, j.name AS job_name, j.address, j.customer_name
+     FROM job_completions jc
+     LEFT JOIN job_segments js ON js.client_id = jc.job_segment_client_id
+     LEFT JOIN jobs_cache j ON j.id = js.job_id
+     WHERE jc.client_id = ?`,
+    [clientId]
+  );
+}
+
+export async function updateCompletionSummary(clientId, visitSummary) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE job_completions SET visit_summary = ?, synced = 0 WHERE client_id = ?`, [
+    visitSummary,
+    clientId,
+  ]);
+}
+
+export async function markCompletionSubmitted(clientId, submittedAt) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE job_completions SET submitted_at = ?, synced = 0 WHERE client_id = ?`, [
+    submittedAt,
+    clientId,
+  ]);
+}
+
+export async function markCompletionSynced(clientId, serverId) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE job_completions SET synced = 1, server_id = ? WHERE client_id = ?`, [
+    serverId,
+    clientId,
+  ]);
+}
+
+export async function getUnsyncedCompletions() {
+  const db = await getDb();
+  return db.getAllAsync(`SELECT * FROM job_completions WHERE synced = 0`);
+}
+
+// --- completion parts (parts used on a job) ---
+
+export async function addCompletionPart(clientId, completionClientId, partId, quantity) {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO job_completion_parts (client_id, job_completion_client_id, part_id, quantity, synced)
+     VALUES (?, ?, ?, ?, 0)`,
+    [clientId, completionClientId, partId, quantity]
+  );
+}
+
+export async function removeCompletionPart(clientId) {
+  const db = await getDb();
+  await db.runAsync(`DELETE FROM job_completion_parts WHERE client_id = ?`, [clientId]);
+}
+
+export async function getCompletionParts(completionClientId) {
+  const db = await getDb();
+  return db.getAllAsync(
+    `SELECT jcp.*, p.category, p.name, p.unit
+     FROM job_completion_parts jcp
+     LEFT JOIN parts_cache p ON p.id = jcp.part_id
+     WHERE jcp.job_completion_client_id = ?`,
+    [completionClientId]
+  );
+}
+
+export async function markCompletionPartSynced(clientId, serverId) {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE job_completion_parts SET synced = 1, server_id = ? WHERE client_id = ?`,
+    [serverId, clientId]
+  );
+}
+
+// Only parts whose parent completion is already synced can sync themselves.
+export async function getUnsyncedPartsWithSyncedParent() {
+  const db = await getDb();
+  return db.getAllAsync(
+    `SELECT jcp.* FROM job_completion_parts jcp
+     JOIN job_completions jc ON jc.client_id = jcp.job_completion_client_id
+     WHERE jcp.synced = 0 AND jc.synced = 1`
+  );
+}
+
+// --- completion photos ---
+
+export async function addCompletionPhoto(clientId, completionClientId, kind, localUri) {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO job_completion_photos (client_id, job_completion_client_id, kind, local_uri, uploaded)
+     VALUES (?, ?, ?, ?, 0)`,
+    [clientId, completionClientId, kind, localUri]
+  );
+}
+
+export async function getCompletionPhotos(completionClientId) {
+  const db = await getDb();
+  return db.getAllAsync(
+    `SELECT * FROM job_completion_photos WHERE job_completion_client_id = ? ORDER BY kind`,
+    [completionClientId]
+  );
+}
+
+export async function markPhotoUploaded(clientId) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE job_completion_photos SET uploaded = 1 WHERE client_id = ?`, [clientId]);
+}
+
+// Only photos whose parent completion is already synced can upload.
+export async function getUnuploadedPhotosWithSyncedParent() {
+  const db = await getDb();
+  return db.getAllAsync(
+    `SELECT jcp.* FROM job_completion_photos jcp
+     JOIN job_completions jc ON jc.client_id = jcp.job_completion_client_id
+     WHERE jcp.uploaded = 0 AND jc.synced = 1`
+  );
 }

@@ -20,6 +20,7 @@ export function TrackingProvider({ children }) {
   const [timeEntry, setTimeEntry] = useState(null);
   const [activeSegment, setActiveSegment] = useState(null);
   const [jobs, setJobs] = useState([]);
+  const [parts, setParts] = useState([]);
 
   const refreshLocalState = useCallback(async () => {
     const entry = await local.getOpenTimeEntry();
@@ -33,6 +34,7 @@ export function TrackingProvider({ children }) {
     }
 
     setJobs(await local.getCachedJobs());
+    setParts(await local.getCachedParts());
   }, []);
 
   const triggerSync = useCallback(async () => {
@@ -51,6 +53,17 @@ export function TrackingProvider({ children }) {
     }
   }, [accessToken]);
 
+  const refreshPartsFromServer = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const serverParts = await api.listParts(accessToken);
+      await local.replacePartsCache(serverParts);
+      setParts(await local.getCachedParts());
+    } catch {
+      // Offline or request failed — keep using whatever's already cached.
+    }
+  }, [accessToken]);
+
   // One-time setup: create the local schema and load whatever state is
   // already on-device (works even if we never reach the network).
   useEffect(() => {
@@ -61,13 +74,14 @@ export function TrackingProvider({ children }) {
     })();
   }, [refreshLocalState]);
 
-  // Once logged in: pull a fresh jobs list if we can, and flush anything
-  // queued locally from a previous offline session.
+  // Once logged in: pull fresh jobs/parts lists if we can, and flush
+  // anything queued locally from a previous offline session.
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
     refreshJobsFromServer();
+    refreshPartsFromServer();
     triggerSync();
-  }, [isReady, isAuthenticated, refreshJobsFromServer, triggerSync]);
+  }, [isReady, isAuthenticated, refreshJobsFromServer, refreshPartsFromServer, triggerSync]);
 
   // Sync triggers: connectivity restored, or app brought back to the
   // foreground. (Expo Go can't run true background sync — this is the
@@ -146,19 +160,68 @@ export function TrackingProvider({ children }) {
     [activeSegment, refreshLocalState, triggerSync]
   );
 
+  // Finish is a time marker first (ends the segment right now, same as
+  // before) — that part never waits on anything. It also queues the job
+  // for completion: a separate local record for before/after photos, a
+  // visit summary, and parts used, which the tech fills in and submits
+  // whenever they get to it, synced independently once it exists.
   const finishJob = useCallback(async () => {
-    if (!activeSegment) return false;
-    await local.endSegment(activeSegment.client_id, new Date().toISOString());
+    if (!activeSegment) return null;
+    const now = new Date().toISOString();
+    await local.endSegment(activeSegment.client_id, now);
+
+    const completionClientId = uuidv4();
+    await local.createJobCompletion(completionClientId, activeSegment.client_id);
+
     await refreshLocalState();
     triggerSync();
-    return true;
+    return completionClientId;
   }, [activeSegment, refreshLocalState, triggerSync]);
+
+  // --- job completion details (photos / summary / parts used) ---
+
+  const addPartToCompletion = useCallback(
+    async (completionClientId, partId, quantity = 1) => {
+      const clientId = uuidv4();
+      await local.addCompletionPart(clientId, completionClientId, partId, quantity);
+      triggerSync();
+      return clientId;
+    },
+    [triggerSync]
+  );
+
+  const removePartFromCompletion = useCallback(async (partClientId) => {
+    await local.removeCompletionPart(partClientId);
+  }, []);
+
+  const addPhotoToCompletion = useCallback(
+    async (completionClientId, kind, localUri) => {
+      const clientId = uuidv4();
+      await local.addCompletionPhoto(clientId, completionClientId, kind, localUri);
+      triggerSync();
+      return clientId;
+    },
+    [triggerSync]
+  );
+
+  const setCompletionSummary = useCallback(async (completionClientId, summary) => {
+    await local.updateCompletionSummary(completionClientId, summary);
+  }, []);
+
+  const submitCompletion = useCallback(
+    async (completionClientId) => {
+      await local.markCompletionSubmitted(completionClientId, new Date().toISOString());
+      triggerSync();
+    },
+    [triggerSync]
+  );
 
   const value = {
     isReady,
     timeEntry,
     activeSegment,
     jobs,
+    parts,
     isClockedIn: !!timeEntry,
     clockIn,
     clockOut,
@@ -166,7 +229,19 @@ export function TrackingProvider({ children }) {
     transitionState,
     finishJob,
     refreshJobsFromServer,
+    refreshPartsFromServer,
     syncNow: triggerSync,
+    // completion details — reads pass straight through to the local DB,
+    // writes go through the wrappers above so they trigger a sync
+    getPendingCompletions: local.getPendingCompletions,
+    getJobCompletion: local.getJobCompletion,
+    getCompletionParts: local.getCompletionParts,
+    getCompletionPhotos: local.getCompletionPhotos,
+    addPartToCompletion,
+    removePartFromCompletion,
+    addPhotoToCompletion,
+    setCompletionSummary,
+    submitCompletion,
   };
 
   return <TrackingContext.Provider value={value}>{children}</TrackingContext.Provider>;
