@@ -118,8 +118,12 @@ export function TrackingProvider({ children }) {
     const now = new Date().toISOString();
     // Auto-finish any active job segment, mirroring the backend's clock-out
     // behavior, so forgetting to explicitly finish a job doesn't block this.
+    // Also queues a completion for it, same as an explicit Finish — clocking
+    // out mid-job shouldn't silently skip the photos/summary/parts prompt.
     if (activeSegment) {
       await local.endSegment(activeSegment.client_id, now);
+      const completionClientId = uuidv4();
+      await local.createJobCompletion(completionClientId, activeSegment.client_id);
     }
     await local.setTimeEntryClockOut(timeEntry.client_id, now);
     await refreshLocalState();

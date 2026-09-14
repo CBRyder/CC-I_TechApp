@@ -1,19 +1,22 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../screens/HomeScreen';
+import JobSelectionScreen from '../screens/JobSelectionScreen';
 import CompleteJobScreen from '../screens/CompleteJobScreen';
 import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
 
 const Stack = createNativeStackNavigator();
 
-// Clock in/out and job selection (travel/work/pause) still need their own
-// screens — this is next up. Job completion (photos/summary/parts, queued
-// by Finish) is built out below.
 export default function AppStack() {
   return (
     <Stack.Navigator>
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'CC-I Tech App' }} />
+      <Stack.Screen
+        name="JobSelection"
+        component={JobSelectionScreen}
+        options={{ title: 'Select a Job' }}
+      />
       <Stack.Screen
         name="CompleteJob"
         component={CompleteJobScreen}
