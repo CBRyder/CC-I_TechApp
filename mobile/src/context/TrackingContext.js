@@ -23,7 +23,7 @@ function todayLocalDate() {
 // the backend happens in the background (see src/sync/syncEngine.js) and
 // never blocks an action.
 export function TrackingProvider({ children }) {
-  const { accessToken, refreshAccessToken, isAuthenticated } = useAuth();
+  const { user, accessToken, refreshAccessToken, isAuthenticated } = useAuth();
   const [isReady, setIsReady] = useState(false);
   const [timeEntry, setTimeEntry] = useState(null);
   const [activeSegment, setActiveSegment] = useState(null);
@@ -100,17 +100,27 @@ export function TrackingProvider({ children }) {
     })();
   }, [refreshLocalState]);
 
-  // Once logged in: pull fresh jobs/parts lists if we can, and flush
-  // anything queued locally from a previous offline session.
+  // Once logged in: make sure this device's local data actually belongs to
+  // this account (wiping it first if a different account used this device
+  // last — see ensureLocalDataForUser's comment), THEN pull fresh jobs/
+  // parts lists and flush anything queued locally from a previous offline
+  // session. The ordering matters — refreshing local state before the
+  // ownership check would briefly show the previous account's data.
   useEffect(() => {
-    if (!isReady || !isAuthenticated) return;
-    refreshJobsFromServer();
-    refreshAssignedJobsFromServer();
-    refreshPartsFromServer();
-    triggerSync();
+    if (!isReady || !isAuthenticated || !user) return;
+    (async () => {
+      await local.ensureLocalDataForUser(user.id);
+      await refreshLocalState();
+      refreshJobsFromServer();
+      refreshAssignedJobsFromServer();
+      refreshPartsFromServer();
+      triggerSync();
+    })();
   }, [
     isReady,
     isAuthenticated,
+    user,
+    refreshLocalState,
     refreshJobsFromServer,
     refreshAssignedJobsFromServer,
     refreshPartsFromServer,

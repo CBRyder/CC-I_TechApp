@@ -530,3 +530,44 @@ export async function clearCompletedVisits() {
     await db.runAsync(`DELETE FROM job_completions`);
   });
 }
+
+// --- per-account local data isolation ---
+//
+// Every table above is otherwise shared globally on the device, with no
+// user_id column at all — it was built assuming "one tech, one phone,"
+// which holds in real use but breaks the moment a second account logs in
+// on the same device (a new account would just see whatever the previous
+// one left behind: hours, jobs, everything). CURRENT_USER_KEY tracks which
+// account's data is actually sitting in these tables; when a different
+// user logs in, everything gets wiped before that account touches it.
+//
+// This does mean switching back to a previous account on the same device
+// starts that account's local data fresh too (not restored) — the sync
+// engine only ever pushes local -> server, never pulls server -> local, so
+// there's nothing to re-download from. Fine for the real usage pattern
+// (one tech's own phone); a real "restore from server" sync would be a
+// separate feature if multi-account-per-device ever becomes a real case.
+const CURRENT_USER_KEY = 'current_user_id';
+
+// Call once per login, before any other local read/write for the session.
+// Wipes local tracking data if a different account was last using this
+// device; no-ops if it's the same account (or the first login ever).
+export async function ensureLocalDataForUser(userId) {
+  const stored = await getAppSetting(CURRENT_USER_KEY);
+  if (stored !== null && Number(stored) === Number(userId)) return;
+
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM job_completion_photos`);
+    await db.runAsync(`DELETE FROM job_completion_parts`);
+    await db.runAsync(`DELETE FROM job_completions`);
+    await db.runAsync(`DELETE FROM job_segments`);
+    await db.runAsync(`DELETE FROM time_entries`);
+    await db.runAsync(`DELETE FROM jobs_cache`);
+    await db.runAsync(`DELETE FROM assigned_jobs_cache`);
+    await db.runAsync(`DELETE FROM preferences_cache`);
+    // parts_cache intentionally untouched — shared catalog data, not
+    // scoped to any one account.
+  });
+  await setAppSetting(CURRENT_USER_KEY, String(userId));
+}

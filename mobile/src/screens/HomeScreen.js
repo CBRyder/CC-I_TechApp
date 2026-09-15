@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, Card } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
@@ -71,9 +71,11 @@ export default function HomeScreen({ navigation }) {
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>
             Clock In
           </Button>
-          <Text style={{ textAlign: 'center', marginTop: spacing.md }}>
-            {todaySummary.totalHours.toFixed(1)} hrs today
-          </Text>
+          <Pressable onPress={() => navigation.navigate('HoursHistory')}>
+            <Text style={{ textAlign: 'center', marginTop: spacing.md }}>
+              {todaySummary.totalHours.toFixed(1)} hrs today
+            </Text>
+          </Pressable>
           {todaySummary.visits.map((visit) => (
             <Button
               key={visit.completion_client_id}
