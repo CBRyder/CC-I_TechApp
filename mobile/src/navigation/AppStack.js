@@ -2,6 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../screens/HomeScreen';
 import JobSelectionScreen from '../screens/JobSelectionScreen';
+import JobDetailScreen from '../screens/JobDetailScreen';
 import CompleteJobScreen from '../screens/CompleteJobScreen';
 import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
@@ -17,6 +18,11 @@ export default function AppStack() {
         name="JobSelection"
         component={JobSelectionScreen}
         options={{ title: 'Select a Job' }}
+      />
+      <Stack.Screen
+        name="JobDetail"
+        component={JobDetailScreen}
+        options={{ title: 'Job Details' }}
       />
       <Stack.Screen
         name="CompleteJob"

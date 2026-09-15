@@ -1,8 +1,11 @@
 // Base URL for the backend API.
 // - iOS simulator: http://localhost:3000 also works.
-// - Physical device via Expo Go: needs your machine's LAN IP (find with
-//   `ipconfig`, look for IPv4 Address) so the phone can reach your PC over
-//   Wi-Fi. Update this if your machine's IP changes (e.g. new network).
+// - Physical device via Expo Go on the SAME Wi-Fi as your PC: your
+//   machine's LAN IP (find with `ipconfig`, look for IPv4 Address), e.g.
+//   'http://192.168.1.153:3000'.
+// - Physical device off that Wi-Fi (cellular, different network): needs a
+//   tunnel — TEMPORARY, dies when the tunnel process stops or this session
+//   ends. Swap back to the LAN IP once you're back on the same Wi-Fi.
 export const API_BASE_URL = 'http://192.168.1.153:3000';
 
 class ApiError extends Error {
@@ -91,6 +94,11 @@ export function setPreference(key, value, accessToken) {
 
 export function listJobs(accessToken) {
   return request('/jobs', { accessToken });
+}
+
+// Notes other techs left on past visits to this job.
+export function getJobHistory(jobId, accessToken) {
+  return request(`/jobs/${jobId}/history`, { accessToken });
 }
 
 // date: 'YYYY-MM-DD', the device's own local date.

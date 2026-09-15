@@ -14,6 +14,8 @@ export default function ClockBanner({
   onClockIn,
   onClockOut,
   title,
+  showHeading = true,
+  showButton = true,
 }) {
   const theme = useTheme();
   const heading =
@@ -22,16 +24,17 @@ export default function ClockBanner({
   return (
     <View style={[styles.banner, { backgroundColor: theme.colors.primary }]}>
       <Text style={styles.date}>{date}</Text>
-      <Text style={styles.heading}>{heading}</Text>
-      {isClockedIn ? (
-        <Button variant="secondary" onPress={onClockOut}>
-          Clock Out
-        </Button>
-      ) : (
-        <Button variant="secondary" onPress={onClockIn}>
-          Clock In
-        </Button>
-      )}
+      {showHeading && <Text style={styles.heading}>{heading}</Text>}
+      {showButton &&
+        (isClockedIn ? (
+          <Button variant="secondary" onPress={onClockOut}>
+            Clock Out
+          </Button>
+        ) : (
+          <Button variant="secondary" onPress={onClockIn}>
+            Clock In
+          </Button>
+        ))}
     </View>
   );
 }

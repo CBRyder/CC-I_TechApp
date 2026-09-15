@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, Card } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 import { useTracking } from '../context/TrackingContext';
+import { ScreenContainer, ClockBanner } from '../ui';
 
 const STATE_LABELS = {
   travel: 'Traveling to job',
@@ -32,9 +33,17 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Avatar.Text size={64} label={initials(user?.full_name)} />
-      <Text variant="headlineSmall" style={styles.greeting}>
+    <ScreenContainer 
+        header={
+          <ClockBanner
+            date={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+            isClockedIn={isClockedIn}
+            showHeading={false}
+            showButton={false}
+          />
+        }
+      >
+      <Avatar.Text size={64} label={initials(user?.full_name)} /><Text variant="headlineSmall" style={styles.greeting}>
         Hi, {user?.full_name}
       </Text>
 
@@ -126,7 +135,7 @@ export default function HomeScreen({ navigation }) {
       <Button mode="text" onPress={logout} style={styles.logoutButton}>
         Log Out
       </Button>
-    </ScrollView>
+    </ScreenContainer>
   );
 }
 
@@ -146,13 +155,6 @@ function initials(name) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 24,
-  },
   greeting: {
     marginTop: 16,
   },

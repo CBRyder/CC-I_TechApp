@@ -19,6 +19,33 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+// Any authenticated tech (not admin-only) — the notes/summaries other techs
+// left on past visits to this job, so someone heading out to it can see
+// what happened last time. Only submitted completions with an actual
+// summary show up; drafts and blank ones are skipped.
+router.get('/:jobId/history', requireAuth, async (req, res) => {
+  const { jobId } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT jc.id, jc.visit_summary, jc.submitted_at, u.full_name AS tech_name
+       FROM job_completions jc
+       JOIN job_segments js ON js.id = jc.job_segment_id
+       JOIN users u ON u.id = jc.user_id
+       WHERE js.job_id = $1
+         AND jc.submitted_at IS NOT NULL
+         AND jc.visit_summary IS NOT NULL
+         AND jc.visit_summary != ''
+       ORDER BY jc.submitted_at DESC`,
+      [jobId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch job history' });
+  }
+});
+
 // Admin-only: create a job. Previously jobs could only be seeded via
 // migration — this is what the admin "add a job" screen calls.
 router.post('/', requireAuth, requireRole('admin'), async (req, res) => {

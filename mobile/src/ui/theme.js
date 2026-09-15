@@ -1,13 +1,14 @@
 import { MD3LightTheme, MD3DarkTheme } from 'react-native-paper';
 
-// Starting palette — change these values to reskin the whole app. Every
-// block in src/ui/ pulls its colors from the Paper theme (via useTheme()),
-// so editing here (or stateColors below) restyles everywhere at once.
-// Nothing about this is locked — treat it as a first draft, not a rule.
+// CC&I brand colors, pulled from the company logo (deep forest green +
+// near-black) — visual estimates, not sampled from an official brand guide,
+// so swap in exact hex values if/when there's a source of truth for them.
+// Every block in src/ui/ pulls its colors from the Paper theme (via
+// useTheme()), so editing here (or stateColors below) restyles everywhere.
 const brand = {
-  primary: '#FF6A1A', // primary actions
-  secondary: '#C8DA3F', // secondary accent
-  error: '#E14B3D',
+  primary: '#2F5F45', // deep forest green — primary actions
+  secondary: '#5C8A6E', // lighter tint of the same green — secondary accent
+  error: '#E14B3D', // stays a standard red regardless of brand — errors need to read as errors
 };
 
 export const lightTheme = {
@@ -24,7 +25,7 @@ export const darkTheme = {
   colors: {
     ...MD3DarkTheme.colors,
     ...brand,
-    background: '#1A1D21',
+    background: '#0D0F0D', // near-black, matching the logo's background
   },
 };
 
