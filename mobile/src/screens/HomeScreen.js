@@ -61,7 +61,9 @@ export default function HomeScreen({ navigation }) {
         ) : null
       }
     >
-      <Avatar.Text size={64} label={initials(user?.full_name)} />
+      <Pressable onPress={() => navigation.navigate('SwitchAccount')}>
+        <Avatar.Text size={64} label={initials(user?.full_name)} />
+      </Pressable>
       <Text variant="headlineSmall" style={styles.greeting}>
         Hi, {user?.full_name}
       </Text>

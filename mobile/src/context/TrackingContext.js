@@ -111,10 +111,14 @@ export function TrackingProvider({ children }) {
     (async () => {
       await local.ensureLocalDataForUser(user.id);
       await refreshLocalState();
-      refreshJobsFromServer();
-      refreshAssignedJobsFromServer();
-      refreshPartsFromServer();
-      triggerSync();
+      // Sequenced, not fired concurrently — each of these opens its own
+      // SQLite transaction on the same connection, and expo-sqlite can't
+      // handle overlapping ones (surfaces as "cannot rollback, no
+      // transaction is active" when two collide).
+      await refreshJobsFromServer();
+      await refreshAssignedJobsFromServer();
+      await refreshPartsFromServer();
+      await triggerSync();
     })();
   }, [
     isReady,
