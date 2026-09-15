@@ -9,6 +9,24 @@ function getDb() {
   return dbPromise;
 }
 
+// expo-sqlite can't handle two withTransactionAsync calls overlapping on
+// the same connection — one's cleanup collides with the other's and it
+// throws "cannot rollback, no transaction is active." That's easy to hit
+// here: TrackingContext's login effect and a screen's own focus-effect
+// reads can genuinely run around the same moment. Every transaction in this
+// file goes through runTransaction instead of calling
+// db.withTransactionAsync directly, so only one is ever in flight globally,
+// no matter which component/effect kicked it off.
+let transactionQueue = Promise.resolve();
+async function runTransaction(fn) {
+  const db = await getDb();
+  const result = transactionQueue.then(() => db.withTransactionAsync(() => fn(db)));
+  // Swallow here so one failed transaction doesn't wedge the queue for
+  // everything queued after it — the caller below still gets the real error.
+  transactionQueue = result.catch(() => {});
+  return result;
+}
+
 // Creates the local schema if it doesn't exist yet. Safe to call every app
 // launch. This local DB is the real-time source of truth for clock/job
 // state on this device — the backend is a durable copy it syncs to when
@@ -202,8 +220,7 @@ export async function getUnsyncedSegmentsWithSyncedParent() {
 // --- jobs cache (so job selection works with no signal) ---
 
 export async function replaceJobsCache(jobs) {
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await runTransaction(async (db) => {
     await db.runAsync(`DELETE FROM jobs_cache`);
     for (const job of jobs) {
       await db.runAsync(
@@ -223,8 +240,7 @@ export async function getCachedJobs() {
 // --- assigned jobs cache ("today's jobs" for Home — one date at a time) ---
 
 export async function replaceAssignedJobsCache(jobs) {
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await runTransaction(async (db) => {
     await db.runAsync(`DELETE FROM assigned_jobs_cache`);
     for (const job of jobs) {
       await db.runAsync(
@@ -244,8 +260,7 @@ export async function getCachedAssignedJobs() {
 // --- parts catalog cache (so the parts picker works with no signal) ---
 
 export async function replacePartsCache(parts) {
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await runTransaction(async (db) => {
     await db.runAsync(`DELETE FROM parts_cache`);
     for (const part of parts) {
       await db.runAsync(`INSERT INTO parts_cache (id, category, name, unit) VALUES (?, ?, ?, ?)`, [
@@ -447,8 +462,7 @@ export async function setCachedPreference(key, value) {
 }
 
 export async function replacePreferencesCache(preferences) {
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await runTransaction(async (db) => {
     await db.runAsync(`DELETE FROM preferences_cache`);
     for (const [key, value] of Object.entries(preferences)) {
       await db.runAsync(`INSERT INTO preferences_cache (key, value) VALUES (?, ?)`, [key, value]);
@@ -523,8 +537,7 @@ export async function getHoursHistory() {
 // (the actual clock/travel/work history stays) or anything on the backend —
 // this is purely local test-data cleanup, run from the device itself.
 export async function clearCompletedVisits() {
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await runTransaction(async (db) => {
     await db.runAsync(`DELETE FROM job_completion_photos`);
     await db.runAsync(`DELETE FROM job_completion_parts`);
     await db.runAsync(`DELETE FROM job_completions`);
@@ -556,8 +569,7 @@ export async function ensureLocalDataForUser(userId) {
   const stored = await getAppSetting(CURRENT_USER_KEY);
   if (stored !== null && Number(stored) === Number(userId)) return;
 
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await runTransaction(async (db) => {
     await db.runAsync(`DELETE FROM job_completion_photos`);
     await db.runAsync(`DELETE FROM job_completion_parts`);
     await db.runAsync(`DELETE FROM job_completions`);
