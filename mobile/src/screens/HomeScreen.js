@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, Card } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 import { useTracking } from '../context/TrackingContext';
-import { ScreenContainer, ClockBanner, ListRow, spacing } from '../ui';
+import { ScreenContainer, ClockBanner, spacing } from '../ui';
 
 const STATE_LABELS = {
   travel: 'Traveling to job',

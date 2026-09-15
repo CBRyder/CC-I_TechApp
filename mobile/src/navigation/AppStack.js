@@ -1,7 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../screens/HomeScreen';
-import JobSelectionScreen from '../screens/JobSelectionScreen';
 import JobDetailScreen from '../screens/JobDetailScreen';
 import CompleteJobScreen from '../screens/CompleteJobScreen';
 import VisitDetailScreen from '../screens/VisitDetailScreen';
@@ -23,11 +22,6 @@ export default function AppStack() {
   return (
     <Stack.Navigator>
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'CC-I Tech App' }} />
-      <Stack.Screen
-        name="JobSelection"
-        component={JobSelectionScreen}
-        options={{ title: 'Select a Job' }}
-      />
       <Stack.Screen
         name="JobDetail"
         component={JobDetailScreen}
