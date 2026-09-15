@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, Card } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 import { useTracking } from '../context/TrackingContext';
-import { ScreenContainer, ClockBanner, ListRow } from '../ui';
+import { ScreenContainer, ClockBanner, ListRow, spacing } from '../ui';
 
 const STATE_LABELS = {
   travel: 'Traveling to job',
@@ -48,53 +48,56 @@ export default function HomeScreen({ navigation }) {
         <ClockBanner
           date={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
           isClockedIn={isClockedIn}
-          showHeading={false}
+          clockedInSince={timeEntry ? formatTime(timeEntry.clock_in_at) : null}
+          title={!isClockedIn ? "You're clocked out" : undefined}
           showButton={false}
         />
       }
-      >
-      <Avatar.Text size={64} label={initials(user?.full_name)} /><Text variant="headlineSmall" style={styles.greeting}>
+      footer={
+        isClockedIn && !activeSegment ? (
+          <Button mode="outlined" onPress={clockOut} style={styles.secondaryButton}>
+            Clock Out
+          </Button>
+        ) : null
+      }
+    >
+      <Avatar.Text size={64} label={initials(user?.full_name)} />
+      <Text variant="headlineSmall" style={styles.greeting}>
         Hi, {user?.full_name}
       </Text>
 
       {!isClockedIn && (
         <>
-          <Text variant="bodyMedium" style={styles.subtitle}>
-            You're clocked out.
-          </Text>
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>
             Clock In
           </Button>
-          <Text style={{ textAlign: 'center' }}>{todaySummary.totalHours.toFixed(1)} hrs today</Text>
+          <Text style={{ textAlign: 'center', marginTop: spacing.md }}>
+            {todaySummary.totalHours.toFixed(1)} hrs today
+          </Text>
           {todaySummary.visits.map((visit) => (
-            <ListRow
+            <Button
               key={visit.completion_client_id}
-              title={visit.name}
+              variant="outline"
               subtitle={visit.job_number}
               onPress={() =>
                 navigation.navigate('VisitDetail', { completionClientId: visit.completion_client_id })
               }
-            />
+              style={{ marginTop: spacing.sm, width: '100%' }}
+            >
+              {visit.name}
+            </Button>
           ))}
         </>
       )}
 
       {isClockedIn && !activeSegment && (
-        <>
-          <Text variant="bodyMedium" style={styles.subtitle}>
-            Clocked in at {formatTime(timeEntry.clock_in_at)}
-          </Text>
-          <Button
-            mode="contained"
-            onPress={() => navigation.navigate('JobSelection')}
-            style={styles.primaryButton}
-          >
-            Select a Job
-          </Button>
-          <Button mode="outlined" onPress={clockOut} style={styles.secondaryButton}>
-            Clock Out
-          </Button>
-        </>
+        <Button
+          mode="contained"
+          onPress={() => navigation.navigate('JobSelection')}
+          style={styles.primaryButton}
+        >
+          Select a Job
+        </Button>
       )}
 
       {isClockedIn && activeSegment && (
