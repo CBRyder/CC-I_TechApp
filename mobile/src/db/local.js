@@ -455,3 +455,36 @@ export async function replacePreferencesCache(preferences) {
     }
   });
 }
+
+// --- today's summary (total hours + jobs worked, straight from local
+// data — no backend round-trip, matches whatever actually happened on this
+// device today regardless of signal) ---
+
+export async function getTodaySummary() {
+  const db = await getDb();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartIso = todayStart.toISOString();
+
+  const entries = await db.getAllAsync(
+    `SELECT * FROM time_entries WHERE clock_in_at >= ? ORDER BY clock_in_at`,
+    [todayStartIso]
+  );
+
+  let totalMs = 0;
+  for (const entry of entries) {
+    const start = new Date(entry.clock_in_at).getTime();
+    const end = entry.clock_out_at ? new Date(entry.clock_out_at).getTime() : Date.now();
+    totalMs += end - start;
+  }
+
+  const jobs = await db.getAllAsync(
+    `SELECT DISTINCT j.id, j.job_number, j.name, j.address, j.customer_name
+     FROM job_segments js
+     JOIN jobs_cache j ON j.id = js.job_id
+     WHERE js.started_at >= ?`,
+    [todayStartIso]
+  );
+
+  return { totalHours: totalMs / 3600000, jobs };
+}

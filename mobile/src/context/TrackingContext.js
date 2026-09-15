@@ -274,6 +274,7 @@ export function TrackingProvider({ children }) {
     // completion details — reads pass straight through to the local DB,
     // writes go through the wrappers above so they trigger a sync
     getPendingCompletions: local.getPendingCompletions,
+    getTodaySummary: local.getTodaySummary,
     getJobCompletion: local.getJobCompletion,
     getCompletionParts: local.getCompletionParts,
     getCompletionPhotos: local.getCompletionPhotos,

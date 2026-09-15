@@ -8,7 +8,7 @@ export default function JobSelectionScreen({ navigation }) {
   const { jobs, selectJob } = useTracking();
 
   const handleSelect = async (job) => {
-    navigation.navigation('JobDetail', { job });
+    navigation.navigate('JobDetail', { job });
   };
 
   const theme = useTheme();
