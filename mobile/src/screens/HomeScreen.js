@@ -14,7 +14,7 @@ const STATE_LABELS = {
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
-  const { timeEntry, activeSegment, isClockedIn, clockIn, clockOut, transitionState, finishJob } =
+  const { timeEntry, activeSegment, assignedJobs, isClockedIn, clockIn, clockOut, transitionState, finishJob } =
     useTracking();
   const { getPendingCompletions } = useTracking();
   const [pending, setPending] = useState([]);
@@ -82,7 +82,7 @@ export default function HomeScreen({ navigation }) {
               onPress={() =>
                 navigation.navigate('VisitDetail', { completionClientId: visit.completion_client_id })
               }
-              style={{ marginTop: spacing.sm, width: '100%' }}
+              style={{ marginTop: spacing.lg, width: '100%' }}
             >
               {visit.name}
             </Button>
@@ -91,13 +91,25 @@ export default function HomeScreen({ navigation }) {
       )}
 
       {isClockedIn && !activeSegment && (
-        <Button
-          mode="contained"
-          onPress={() => navigation.navigate('JobSelection')}
-          style={styles.primaryButton}
-        >
-          Select a Job
-        </Button>
+        <>
+          {assignedJobs.length === 0 ? (
+            <Text style={{ textAlign: 'center', marginTop: spacing.md }}>
+              No jobs assigned for today.
+            </Text>
+          ) : (
+            assignedJobs.map((job) => (
+              <Button
+                key={job.id}
+                variant="outline"
+                subtitle={job.address}
+                onPress={() => navigation.navigate('JobDetail', { job })}
+                style={{ marginTop: spacing.sm, width: '100%' }}
+              >
+                {job.name}
+              </Button>
+            ))
+          )}
+        </>
       )}
 
       {isClockedIn && activeSegment && (
