@@ -25,6 +25,15 @@ export default function HomeScreen({ navigation }) {
     }, [getPendingCompletions])
   );
 
+  const { getTodaySummary } = useTracking();
+  const [todaySummary, setTodaySummary] = useState({ totalHours: 0, jobs: [] });
+
+  useFocusEffect(
+    useCallback(() => {
+      getTodaySummary().then(setTodaySummary);
+    }, [getTodaySummary])
+  );
+
   const handleFinish = async () => {
     const completionClientId = await finishJob();
     if (completionClientId) {
@@ -55,6 +64,10 @@ export default function HomeScreen({ navigation }) {
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>
             Clock In
           </Button>
+          <Text>{todaySummary.totalHours.toFixed(1)} hrs today</Text>
+          {todaySummary.jobs.map((job) => (
+            <Text key={job.id}>{job.name}</Text>
+          ))}
         </>
       )}
 

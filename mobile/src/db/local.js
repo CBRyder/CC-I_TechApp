@@ -478,13 +478,21 @@ export async function getTodaySummary() {
     totalMs += end - start;
   }
 
-  const jobs = await db.getAllAsync(
-    `SELECT DISTINCT j.id, j.job_number, j.name, j.address, j.customer_name
-     FROM job_segments js
+  // One row per finished-and-submitted visit today (not per job — a job
+  // worked twice today would show twice), each carrying its completion's
+  // client_id so the UI can navigate straight to that visit's photos/notes.
+  // Pending (not-yet-submitted) visits aren't included here — those already
+  // have their own "Pending Completions" list elsewhere on Home.
+  const visits = await db.getAllAsync(
+    `SELECT jc.client_id AS completion_client_id, jc.submitted_at,
+            j.id AS job_id, j.job_number, j.name, j.address, j.customer_name
+     FROM job_completions jc
+     JOIN job_segments js ON js.client_id = jc.job_segment_client_id
      JOIN jobs_cache j ON j.id = js.job_id
-     WHERE js.started_at >= ?`,
+     WHERE jc.submitted_at >= ?
+     ORDER BY jc.submitted_at`,
     [todayStartIso]
   );
 
-  return { totalHours: totalMs / 3600000, jobs };
+  return { totalHours: totalMs / 3600000, visits };
 }

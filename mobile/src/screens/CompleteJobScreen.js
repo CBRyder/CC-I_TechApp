@@ -3,7 +3,7 @@ import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 're
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Button, IconButton, Text, TextInput } from 'react-native-paper';
 import { useTracking } from '../context/TrackingContext';
-import { capturePhoto } from '../utils/photos';
+import { capturePhotos } from '../utils/photos';
 
 // Reached either right after tapping Finish, or later from Home's "Pending
 // Completions" list — the time marker (job_segments.ended_at) was already
@@ -22,8 +22,7 @@ export default function CompleteJobScreen({ route, navigation }) {
 
   const [completion, setCompletion] = useState(null);
   const [parts, setParts] = useState([]);
-  const [beforePhotos, setBeforePhotos] = useState([]);
-  const [afterPhotos, setAfterPhotos] = useState([]);
+  const [photos, setPhotos] = useState([]);
   const [summary, setSummary] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -33,8 +32,7 @@ export default function CompleteJobScreen({ route, navigation }) {
     setSummary(c?.visit_summary || '');
     setParts(await getCompletionParts(completionClientId));
     const photos = await getCompletionPhotos(completionClientId);
-    setBeforePhotos(photos.filter((p) => p.kind === 'before'));
-    setAfterPhotos(photos.filter((p) => p.kind === 'after'));
+    setPhotos(await getCompletionPhotos(completionClientId));
   }, [completionClientId, getJobCompletion, getCompletionParts, getCompletionPhotos]);
 
   // Reloads whenever this screen regains focus — coming back from the parts
@@ -55,8 +53,9 @@ export default function CompleteJobScreen({ route, navigation }) {
 
   const pickAndAdd = async (source, kind) => {
     const uri = await capturePhoto(source);
-    if (!uri) return;
-    await addPhotoToCompletion(completionClientId, kind, uri);
+    for (const uri of uris) {
+    await addPhotoToCompletion(completionClientId, 'photo', uri);
+    }
     load();
   };
 
@@ -91,14 +90,9 @@ export default function CompleteJobScreen({ route, navigation }) {
       ) : null}
 
       <Text variant="titleMedium" style={styles.sectionTitle}>
-        Before Photos
+        Before/After Photos
       </Text>
-      <PhotoRow photos={beforePhotos} onAdd={() => handleAddPhoto('before')} />
-
-      <Text variant="titleMedium" style={styles.sectionTitle}>
-        After Photos
-      </Text>
-      <PhotoRow photos={afterPhotos} onAdd={() => handleAddPhoto('after')} />
+      <PhotoRow photos={photos} onAdd={() => handleAddPhoto} />
 
       <Text variant="titleMedium" style={styles.sectionTitle}>
         Visit Summary

@@ -4,6 +4,7 @@ import HomeScreen from '../screens/HomeScreen';
 import JobSelectionScreen from '../screens/JobSelectionScreen';
 import JobDetailScreen from '../screens/JobDetailScreen';
 import CompleteJobScreen from '../screens/CompleteJobScreen';
+import VisitDetailScreen from '../screens/VisitDetailScreen';
 import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
 import ComponentGalleryScreen from '../screens/dev/ComponentGalleryScreen';
@@ -28,6 +29,11 @@ export default function AppStack() {
         name="CompleteJob"
         component={CompleteJobScreen}
         options={{ title: 'Complete Job' }}
+      />
+      <Stack.Screen
+        name="VisitDetail"
+        component={VisitDetailScreen}
+        options={{ title: 'Visit Details' }}
       />
       <Stack.Screen
         name="PartsCategory"
