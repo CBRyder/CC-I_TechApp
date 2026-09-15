@@ -103,7 +103,7 @@ export default function HomeScreen({ navigation }) {
                 variant="outline"
                 subtitle={job.address}
                 onPress={() => navigation.navigate('JobDetail', { job })}
-                style={{ marginTop: spacing.sm, width: '100%' }}
+                style={{ marginTop: spacing.lg, width: '100%' }}
               >
                 {job.name}
               </Button>

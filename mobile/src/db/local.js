@@ -497,6 +497,27 @@ export async function getTodaySummary() {
   return { totalHours: totalMs / 3600000, visits };
 }
 
+// Every day this device has clock data for, most recent first, with total
+// hours worked that day — a personal hours history, straight from local
+// time_entries (same "device is the source of truth" approach as
+// getTodaySummary, just across every day instead of just today).
+export async function getHoursHistory() {
+  const db = await getDb();
+  const entries = await db.getAllAsync(`SELECT * FROM time_entries ORDER BY clock_in_at`);
+
+  const byDate = new Map();
+  for (const entry of entries) {
+    const date = entry.clock_in_at.slice(0, 10); // 'YYYY-MM-DD', local wall-clock date it was typed with
+    const start = new Date(entry.clock_in_at).getTime();
+    const end = entry.clock_out_at ? new Date(entry.clock_out_at).getTime() : Date.now();
+    byDate.set(date, (byDate.get(date) || 0) + (end - start));
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, totalMs]) => ({ date, totalHours: totalMs / 3600000 }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
 // Dev-only: wipes local completion records (and their parts/photos) so
 // today's visits list starts clean. Doesn't touch time_entries/job_segments
 // (the actual clock/travel/work history stays) or anything on the backend —
