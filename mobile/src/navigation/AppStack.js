@@ -5,6 +5,8 @@ import JobDetailScreen from '../screens/JobDetailScreen';
 import CompleteJobScreen from '../screens/CompleteJobScreen';
 import VisitDetailScreen from '../screens/VisitDetailScreen';
 import HoursHistoryScreen from '../screens/HoursHistoryScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import SwitchAccountScreen from '../screens/SwitchAccountScreen';
 import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
 import ComponentGalleryScreen from '../screens/dev/ComponentGalleryScreen';
@@ -42,6 +44,12 @@ export default function AppStack() {
         name="HoursHistory"
         component={HoursHistoryScreen}
         options={{ title: 'Hours' }}
+      />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
+      <Stack.Screen
+        name="SwitchAccount"
+        component={SwitchAccountScreen}
+        options={{ title: 'Switch Account' }}
       />
       <Stack.Screen
         name="PartsCategory"
