@@ -4,7 +4,22 @@ import { useTheme } from 'react-native-paper';
 import { spacing, radius, touchTarget } from './theme';
 
 // variant: 'primary' | 'secondary' | 'outline' | 'danger' | 'text'
-export default function Button({ children, onPress, variant = 'primary', disabled, loading, style }) {
+//
+// `subtitle`, if given, adds a second, smaller line below the main label —
+// e.g. a job name as the label and its job number as the subtitle. Meant
+// for a big, unambiguous tap target (a job shown "as a button," not a
+// subtle list row) — sizing steps up accordingly (bigger min height/padding
+// than a plain one-line button) rather than cramming two lines into the
+// normal compact size.
+export default function Button({
+  children,
+  subtitle,
+  onPress,
+  variant = 'primary',
+  disabled,
+  loading,
+  style,
+}) {
   const theme = useTheme();
   const palette = buildPalette(theme, variant);
 
@@ -14,6 +29,7 @@ export default function Button({ children, onPress, variant = 'primary', disable
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.base,
+        subtitle && styles.baseWithSubtitle,
         {
           backgroundColor: palette.background,
           borderColor: palette.border,
@@ -27,7 +43,12 @@ export default function Button({ children, onPress, variant = 'primary', disable
       {loading ? (
         <ActivityIndicator color={palette.text} />
       ) : (
-        <Text style={[styles.label, { color: palette.text }]}>{children}</Text>
+        <>
+          <Text style={[styles.label, { color: palette.text }]}>{children}</Text>
+          {subtitle ? (
+            <Text style={[styles.subtitle, { color: palette.text }]}>{subtitle}</Text>
+          ) : null}
+        </>
       )}
     </Pressable>
   );
@@ -63,8 +84,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
+  baseWithSubtitle: {
+    minHeight: touchTarget * 1.5,
+    paddingVertical: spacing.md,
+  },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  subtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.85,
+    marginTop: 2,
   },
 });

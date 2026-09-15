@@ -43,8 +43,7 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <ScreenContainer
-      scroll={false}
-      contentContainerStyle={{ padding: 12 }}
+      contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 }}
       header={
         <ClockBanner
           date={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
