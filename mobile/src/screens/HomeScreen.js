@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, Card } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 import { useTracking } from '../context/TrackingContext';
-import { ScreenContainer, ClockBanner } from '../ui';
+import { ScreenContainer, ClockBanner, ListRow } from '../ui';
 
 const STATE_LABELS = {
   travel: 'Traveling to job',
@@ -26,7 +26,7 @@ export default function HomeScreen({ navigation }) {
   );
 
   const { getTodaySummary } = useTracking();
-  const [todaySummary, setTodaySummary] = useState({ totalHours: 0, jobs: [] });
+  const [todaySummary, setTodaySummary] = useState({ totalHours: 0, visits: [] });
 
   useFocusEffect(
     useCallback(() => {
@@ -42,15 +42,16 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <ScreenContainer 
-        header={
-          <ClockBanner
-            date={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-            isClockedIn={isClockedIn}
-            showHeading={false}
-            showButton={false}
-          />
-        }
+    <ScreenContainer
+      scroll={false}
+      header={
+        <ClockBanner
+          date={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+          isClockedIn={isClockedIn}
+          showHeading={false}
+          showButton={false}
+        />
+      }
       >
       <Avatar.Text size={64} label={initials(user?.full_name)} /><Text variant="headlineSmall" style={styles.greeting}>
         Hi, {user?.full_name}
@@ -64,9 +65,16 @@ export default function HomeScreen({ navigation }) {
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>
             Clock In
           </Button>
-          <Text>{todaySummary.totalHours.toFixed(1)} hrs today</Text>
-          {todaySummary.jobs.map((job) => (
-            <Text key={job.id}>{job.name}</Text>
+          <Text style={{ textAlign: 'center' }}>{todaySummary.totalHours.toFixed(1)} hrs today</Text>
+          {todaySummary.visits.map((visit) => (
+            <ListRow
+              key={visit.completion_client_id}
+              title={visit.name}
+              subtitle={visit.job_number}
+              onPress={() =>
+                navigation.navigate('VisitDetail', { completionClientId: visit.completion_client_id })
+              }
+            />
           ))}
         </>
       )}

@@ -17,6 +17,7 @@ import {
   FAB,
   spacing,
 } from '../../ui';
+import { useTracking } from '../../context/TrackingContext';
 
 // Not part of the real app flow — a living preview of every building block
 // in src/ui/, so you can see what editing theme.js or a component file
@@ -28,9 +29,21 @@ export default function ComponentGalleryScreen() {
   const [clockedIn, setClockedIn] = useState(false);
   const [tab, setTab] = useState('Today');
   const [search, setSearch] = useState('');
+  const { clearCompletedVisits } = useTracking();
 
   return (
     <ScreenContainer>
+      <SectionHeader>Dev Tools</SectionHeader>
+      <Button
+        variant="danger"
+        onPress={async () => {
+          await clearCompletedVisits();
+          alert('Cleared — local completion records wiped, reload the app to see it reflected.');
+        }}
+      >
+        Clear Completed Visits (local data only)
+      </Button>
+
       {/* ClockBanner wants to sit edge-to-edge (no side padding) — here
           it's shown inside ScreenContainer's padded area just to preview
           it, but on a real screen you'd usually put it above/outside that

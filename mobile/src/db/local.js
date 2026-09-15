@@ -496,3 +496,16 @@ export async function getTodaySummary() {
 
   return { totalHours: totalMs / 3600000, visits };
 }
+
+// Dev-only: wipes local completion records (and their parts/photos) so
+// today's visits list starts clean. Doesn't touch time_entries/job_segments
+// (the actual clock/travel/work history stays) or anything on the backend —
+// this is purely local test-data cleanup, run from the device itself.
+export async function clearCompletedVisits() {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM job_completion_photos`);
+    await db.runAsync(`DELETE FROM job_completion_parts`);
+    await db.runAsync(`DELETE FROM job_completions`);
+  });
+}
