@@ -107,12 +107,15 @@ router.get('/assigned', requireAuth, async (req, res) => {
 // "admin is also the tech working it" are both normal, not a contradiction.
 router.post('/:jobId/assign', requireAuth, requireRole('admin'), async (req, res) => {
   const { jobId } = req.params;
-  const { user_id, date } = req.body;
+  const { user_id, date, visit_type } = req.body;
   if (!user_id) {
     return res.status(400).json({ error: 'user_id is required' });
   }
   if (!date || !DATE_RE.test(date)) {
     return res.status(400).json({ error: 'date is required, as YYYY-MM-DD' });
+  }
+  if (visit_type !== undefined && visit_type !== null && !['shop', 'road'].includes(visit_type)) {
+    return res.status(400).json({ error: "visit_type must be 'shop' or 'road'" });
   }
 
   try {
@@ -141,11 +144,11 @@ router.post('/:jobId/assign', requireAuth, requireRole('admin'), async (req, res
     // Idempotent — assigning the same job/user/date twice is a no-op (and
     // doesn't burn a visit number on the second call).
     const insertResult = await pool.query(
-      `INSERT INTO job_assignments (job_id, user_id, assigned_date, visit_number)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO job_assignments (job_id, user_id, assigned_date, visit_number, visit_type)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (job_id, user_id, assigned_date) DO NOTHING
        RETURNING visit_number`,
-      [jobId, user_id, date, visitNumber]
+      [jobId, user_id, date, visitNumber, visit_type || null]
     );
     const finalVisitNumber =
       insertResult.rows[0]?.visit_number ??

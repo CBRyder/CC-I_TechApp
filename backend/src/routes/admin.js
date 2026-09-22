@@ -17,13 +17,17 @@ const router = express.Router();
 // A shop tech's "Shop Return" and a road tech's "Completed" are the exact
 // same underlying event (the tech tapped Finish) — only the admin-facing
 // label differs. For a tech who's exclusively one type, that's a fixed
-// answer; for a tech who's both, this visit's own data decides: it's
-// treated as shop-style unless it actually has a travel segment (the
-// concrete signal that they went "on the road" for it specifically).
+// answer. For a tech who's both, a dispatcher can set job_assignments
+// .visit_type explicitly when assigning (see migration 016) — if set,
+// that wins outright; if left unset, it falls back to inferring from
+// this visit's own data: shop-style unless it actually has a travel
+// segment (the concrete signal they went "on the road" for it).
 const VALID_STATUSES = ['at_shop', 'ready', 'in_progress', 'shop_return', 'completed'];
 
-function actsAsShopSql(techTypesCol, hasTravelCol) {
+function actsAsShopSql(techTypesCol, hasTravelCol, visitTypeCol) {
   return `(CASE
+    WHEN ${visitTypeCol} = 'shop' THEN true
+    WHEN ${visitTypeCol} = 'road' THEN false
     WHEN ${techTypesCol} = ARRAY['shop']::text[] THEN true
     WHEN ${techTypesCol} = ARRAY['road']::text[] THEN false
     ELSE NOT ${hasTravelCol}
@@ -45,6 +49,7 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
            ja.user_id,
            ja.assigned_date,
            ja.visit_number,
+           ja.visit_type,
            j.job_number,
            j.name AS job_name,
            j.address,
@@ -77,12 +82,12 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
          JOIN jobs j ON j.id = ja.job_id
          JOIN users u ON u.id = ja.user_id
        )
-       SELECT assignment_id, job_id, user_id, assigned_date, visit_number, job_number, job_name,
+       SELECT assignment_id, job_id, user_id, assigned_date, visit_number, visit_type, job_number, job_name,
               address, customer_name, location_name, total_visits, assigned_to, tech_types, visit_code,
               CASE
-                WHEN is_completed THEN CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'shop_return' ELSE 'completed' END
+                WHEN is_completed THEN CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment', 'visit_type')} THEN 'shop_return' ELSE 'completed' END
                 WHEN has_segment THEN 'in_progress'
-                ELSE CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'at_shop' ELSE 'ready' END
+                ELSE CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment', 'visit_type')} THEN 'at_shop' ELSE 'ready' END
               END AS status
        FROM visits
        WHERE ($1::text IS NULL
@@ -252,7 +257,7 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
   try {
     const assignmentResult = await pool.query(
       `SELECT
-         ja.id AS assignment_id, ja.job_id, ja.user_id, ja.assigned_date, ja.visit_number,
+         ja.id AS assignment_id, ja.job_id, ja.user_id, ja.assigned_date, ja.visit_number, ja.visit_type,
          j.job_number, j.name AS job_name, j.address, j.customer_name, j.location_name, j.total_visits,
          u.full_name AS assigned_to, u.tech_types,
          (j.job_number || '-V' || ja.visit_number::text ||
@@ -309,7 +314,11 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
     // extra query round-trip just to reuse that logic here).
     const techTypes = assignment.tech_types;
     const actsAsShop =
-      techTypes.length === 1 && techTypes[0] === 'shop'
+      assignment.visit_type === 'shop'
+        ? true
+        : assignment.visit_type === 'road'
+        ? false
+        : techTypes.length === 1 && techTypes[0] === 'shop'
         ? true
         : techTypes.length === 1 && techTypes[0] === 'road'
         ? false
@@ -457,13 +466,16 @@ router.post('/customers', requireAuth, requireRole('admin'), async (req, res) =>
 // a dispatcher correcting a mistake, not for logging a new day of work.
 router.patch('/visits/:assignmentId/reassign', requireAuth, requireRole('admin'), async (req, res) => {
   const assignmentId = Number(req.params.assignmentId);
-  const { user_id, assigned_date } = req.body;
+  const { user_id, assigned_date, visit_type } = req.body;
 
   if (!user_id) {
     return res.status(400).json({ error: 'user_id is required' });
   }
   if (!assigned_date || !/^\d{4}-\d{2}-\d{2}$/.test(assigned_date)) {
     return res.status(400).json({ error: 'assigned_date is required, as YYYY-MM-DD' });
+  }
+  if (visit_type !== undefined && visit_type !== null && !['shop', 'road'].includes(visit_type)) {
+    return res.status(400).json({ error: "visit_type must be 'shop' or 'road'" });
   }
 
   try {
@@ -473,10 +485,10 @@ router.patch('/visits/:assignmentId/reassign', requireAuth, requireRole('admin')
     }
 
     const result = await pool.query(
-      `UPDATE job_assignments SET user_id = $1, assigned_date = $2
+      `UPDATE job_assignments SET user_id = $1, assigned_date = $2, visit_type = COALESCE($4, visit_type)
        WHERE id = $3
-       RETURNING id AS assignment_id, job_id, user_id, assigned_date, visit_number`,
-      [user_id, assigned_date, assignmentId]
+       RETURNING id AS assignment_id, job_id, user_id, assigned_date, visit_number, visit_type`,
+      [user_id, assigned_date, assignmentId, visit_type ?? null]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Visit not found' });
@@ -490,6 +502,28 @@ router.patch('/visits/:assignmentId/reassign', requireAuth, requireRole('admin')
     }
     console.error(err);
     res.status(500).json({ error: 'Failed to reassign visit' });
+  }
+});
+
+// Deletes the dispatch record itself (job_assignments row) — for a
+// mismatched/typo'd assignment (wrong job, wrong tech, wrong date). This
+// doesn't touch any hours/segments/completion the tech may have already
+// logged against that job/date (there's no FK from those to
+// job_assignments) — it only removes it from the admin's visit list.
+router.delete('/visits/:assignmentId', requireAuth, requireRole('admin'), async (req, res) => {
+  const assignmentId = Number(req.params.assignmentId);
+
+  try {
+    const result = await pool.query('DELETE FROM job_assignments WHERE id = $1 RETURNING id', [
+      assignmentId,
+    ]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Visit not found' });
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete visit' });
   }
 });
 
