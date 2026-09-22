@@ -31,6 +31,12 @@ export default function AdminHomeScreen({ navigation }) {
         Users &amp; Roles
       </Button>
       <Button
+        onPress={() => navigation.navigate('AdminSessions')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Active Devices
+      </Button>
+      <Button
         onPress={() => navigation.navigate('AdminVisits')}
         style={{ marginTop: spacing.sm, width: '100%' }}
       >
