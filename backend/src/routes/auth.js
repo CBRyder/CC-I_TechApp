@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const pool = require('../db');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
@@ -198,6 +199,7 @@ router.post('/login', async (req, res) => {
       const blocked = await loginRateLimited(client, identifierHash, ipAddress, deviceHash);
       if (blocked) {
         await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, false);
+        await audit({ action: 'login_rate_limited', ipAddress, metadata: { scope: 'account_ip_device' } });
         return res.status(429).json({
           error: 'Too many failed login attempts. Try again later.',
           code: 'LOGIN_RATE_LIMITED',
@@ -212,12 +214,14 @@ router.post('/login', async (req, res) => {
 
       if (!user) {
         await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, false);
+        await audit({ action: 'login_failed', ipAddress });
         return res.status(401).json({ error: 'Invalid username/email or password' });
       }
 
       const validPassword = await bcrypt.compare(password, user.password_hash);
       if (!validPassword) {
         await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, false);
+        await audit({ action: 'login_failed', ipAddress });
         return res.status(401).json({ error: 'Invalid username/email or password' });
       }
 
@@ -230,6 +234,7 @@ router.post('/login', async (req, res) => {
       const session = await createSession(client, user.id, normalizedDeviceId);
       await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, true);
       await client.query('COMMIT');
+      await audit({ actorUserId: user.id, action: 'login_success', resourceType: 'session', resourceId: session.sessionId, ipAddress });
 
       const accessToken = signAccessToken(user.id, roles, session.sessionId);
 
@@ -304,6 +309,7 @@ router.post('/refresh', async (req, res) => {
         [stored.user_id, stored.family_id]
       );
       await client.query('COMMIT');
+      await audit({ action: 'refresh_token_reuse', targetUserId: stored.user_id, resourceType: 'session_family', resourceId: stored.family_id, ipAddress: req.ip });
       return res.status(401).json({
         error: 'Refresh token reuse detected; this device session has been revoked',
         code: 'REFRESH_TOKEN_REUSE',
@@ -406,10 +412,13 @@ router.post('/logout', async (req, res) => {
 
   try {
     const tokenHash = hashRefreshToken(refreshToken);
-    await pool.query(
-      'UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1',
+    const result = await pool.query(
+      'UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1 RETURNING user_id, id',
       [tokenHash]
     );
+    if (result.rows[0]) {
+      await audit({ actorUserId: result.rows[0].user_id, action: 'logout', resourceType: 'session', resourceId: result.rows[0].id, ipAddress: req.ip });
+    }
     res.json({ success: true });
   } catch (err) {
     console.error(err);
