@@ -13,34 +13,27 @@ async function requireAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-    // JWT claims are not authoritative for account status or roles. Checking
-    // the account on each request makes deletion/revocation effective
-    // immediately instead of waiting for the 15-minute access token to expire.
-    const result = await pool.query(
-      `SELECT u.id, u.status,
-              COALESCE(array_agg(ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
-       FROM users u
-       LEFT JOIN user_roles ur ON ur.user_id = u.id
-       WHERE u.id = $1
-       GROUP BY u.id`,
-      [payload.userId]
-    );
-    const user = result.rows[0];
-
-    if (!user || user.status !== 'active') {
-      return res.status(401).json({ error: 'Account is no longer active' });
+    // Access tokens issued by the hardened auth flow are bound to a server
+    // session. Revoking that session therefore takes effect immediately,
+    // rather than waiting for the 15-minute access token to expire.
+    if (payload.sessionId) {
+      const sessionResult = await pool.query(
+        `SELECT id
+         FROM refresh_tokens
+         WHERE id = $1
+           AND user_id = $2
+           AND revoked_at IS NULL
+           AND expires_at > now()`,
+        [payload.sessionId, payload.userId]
+      );
+      if (sessionResult.rows.length === 0) {
+        return res.status(401).json({ error: 'Session has been revoked or expired' });
+      }
     }
 
-    req.user = {
-      ...payload,
-      userId: user.id,
-      roles: user.roles,
-    };
+    req.user = payload;
     next();
   } catch (err) {
-    if (err.name !== 'JsonWebTokenError' && err.name !== 'TokenExpiredError') {
-      console.error(err);
-    }
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
