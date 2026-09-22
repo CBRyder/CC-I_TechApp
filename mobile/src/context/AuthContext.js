@@ -7,6 +7,11 @@ const ACCOUNTS_KEY = 'accounts';
 const ACTIVE_USER_KEY = 'activeUserId';
 const DEVICE_ID_KEY = 'deviceId';
 
+// Refresh-token rotation invalidates the old token immediately. Prevent
+// concurrent app effects from racing the same refresh token and triggering
+// the server's reuse-detection response.
+const refreshFlights = new Map();
+
 async function getAccounts() {
   const raw = await SecureStore.getItemAsync(ACCOUNTS_KEY);
   return raw ? JSON.parse(raw) : [];
@@ -23,6 +28,18 @@ async function getDeviceId() {
     await SecureStore.setItemAsync(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;
+}
+
+async function rotateRefreshToken(accountId, refreshToken, deviceId) {
+  const key = String(accountId);
+  const existing = refreshFlights.get(key);
+  if (existing) return existing;
+
+  const promise = api.refresh(refreshToken, deviceId).finally(() => {
+    refreshFlights.delete(key);
+  });
+  refreshFlights.set(key, promise);
+  return promise;
 }
 
 async function upsertAccount(account) {
@@ -64,7 +81,7 @@ export function AuthProvider({ children }) {
         if (!account?.refreshToken) return;
 
         const deviceId = await getDeviceId();
-        const refreshed = await api.refresh(account.refreshToken, deviceId);
+        const refreshed = await rotateRefreshToken(account.id, account.refreshToken, deviceId);
 
         await upsertAccount({
           ...account,
@@ -151,7 +168,7 @@ export function AuthProvider({ children }) {
     if (!account.refreshToken) throw new Error('Please sign in to this account again');
 
     const deviceId = await getDeviceId();
-    const refreshed = await api.refresh(account.refreshToken, deviceId);
+    const refreshed = await rotateRefreshToken(account.id, account.refreshToken, deviceId);
 
     await upsertAccount({
       ...account,
