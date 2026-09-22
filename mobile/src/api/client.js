@@ -184,6 +184,14 @@ export function deleteUser(userId, accessToken) {
   return request(`/admin/users/${userId}`, { method: 'DELETE', accessToken });
 }
 
+export function adminResetPassword(userId, newPassword, accessToken) {
+  return request(`/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    body: { new_password: newPassword },
+    accessToken,
+  });
+}
+
 export function listAdminVisits({ status, q } = {}, accessToken) {
   const params = new URLSearchParams();
   if (status) params.set('status', status);
