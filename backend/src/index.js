@@ -12,6 +12,11 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+// Render sits behind a trusted reverse proxy. This makes req.ip represent
+// the connecting client IP instead of the proxy address, which is needed for
+// login abuse controls. Do not trust arbitrary forwarded hops.
+app.set('trust proxy', 1);
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
