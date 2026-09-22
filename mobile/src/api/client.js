@@ -160,6 +160,14 @@ export function listAdminUsers(accessToken) {
   return request('/admin/users', { accessToken });
 }
 
+export function listAdminSessions(accessToken) {
+  return request('/admin/sessions', { accessToken });
+}
+
+export function revokeAdminSession(sessionId, accessToken) {
+  return request(`/admin/sessions/${sessionId}`, { method: 'DELETE', accessToken });
+}
+
 export function updateUserRoles(userId, roles, accessToken) {
   return request(`/admin/users/${userId}/roles`, {
     method: 'PUT',
