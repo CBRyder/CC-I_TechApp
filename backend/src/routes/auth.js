@@ -28,6 +28,49 @@ function createFamilyId() {
   return crypto.randomBytes(24).toString('hex');
 }
 
+function hashIdentifier(value) {
+  return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
+}
+
+function hashDeviceId(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+async function loginRateLimited(client, identifierHash, ipAddress, deviceHash) {
+  const result = await client.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM auth_login_attempts
+        WHERE identifier_hash = $1
+          AND succeeded = false
+          AND attempted_at > now() - interval '15 minutes') AS identifier_failures,
+       (SELECT COUNT(*)::int FROM auth_login_attempts
+        WHERE ip_address = $2
+          AND succeeded = false
+          AND attempted_at > now() - interval '15 minutes') AS ip_failures,
+       (SELECT COUNT(*)::int FROM auth_login_attempts
+        WHERE device_id = $3
+          AND succeeded = false
+          AND attempted_at > now() - interval '15 minutes') AS device_failures`,
+    [identifierHash, ipAddress || null, deviceHash]
+  );
+
+  const row = result.rows[0];
+  return (
+    row.identifier_failures >= 5 ||
+    row.ip_failures >= 20 ||
+    row.device_failures >= 10
+  );
+}
+
+async function recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, succeeded) {
+  await client.query(
+    `INSERT INTO auth_login_attempts
+       (identifier_hash, ip_address, device_id, succeeded)
+     VALUES ($1, $2, $3, $4)`,
+    [identifierHash, ipAddress || null, deviceHash, succeeded]
+  );
+}
+
 function signAccessToken(userId, roles, sessionId) {
   return jwt.sign(
     { userId, roles, sessionId },
@@ -145,31 +188,47 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'deviceId is required' });
   }
 
+  const identifierHash = hashIdentifier(identifier);
+  const deviceHash = hashDeviceId(normalizedDeviceId);
+  const ipAddress = req.ip;
+
   try {
-    const result = await pool.query(
-      'SELECT * FROM users WHERE (username = $1 OR email = $1) AND status = \'active\'',
-      [identifier]
-    );
-    const user = result.rows[0];
-
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid username/email or password' });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password_hash);
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid username/email or password' });
-    }
-
-    const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
-      user.id,
-    ]);
-    const roles = rolesResult.rows.map((r) => r.role);
-
     const client = await pool.connect();
     try {
+      const blocked = await loginRateLimited(client, identifierHash, ipAddress, deviceHash);
+      if (blocked) {
+        await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, false);
+        return res.status(429).json({
+          error: 'Too many failed login attempts. Try again later.',
+          code: 'LOGIN_RATE_LIMITED',
+        });
+      }
+
+      const result = await client.query(
+        'SELECT * FROM users WHERE (username = $1 OR email = $1) AND status = \'active\'',
+        [identifier]
+      );
+      const user = result.rows[0];
+
+      if (!user) {
+        await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, false);
+        return res.status(401).json({ error: 'Invalid username/email or password' });
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password_hash);
+      if (!validPassword) {
+        await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, false);
+        return res.status(401).json({ error: 'Invalid username/email or password' });
+      }
+
+      const rolesResult = await client.query('SELECT role FROM user_roles WHERE user_id = $1', [
+        user.id,
+      ]);
+      const roles = rolesResult.rows.map((r) => r.role);
+
       await client.query('BEGIN');
       const session = await createSession(client, user.id, normalizedDeviceId);
+      await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, true);
       await client.query('COMMIT');
 
       const accessToken = signAccessToken(user.id, roles, session.sessionId);
@@ -188,7 +247,9 @@ router.post('/login', async (req, res) => {
         },
       });
     } catch (err) {
-      await client.query('ROLLBACK');
+      try {
+        await client.query('ROLLBACK');
+      } catch {}
       if (err.code === 'DEVICE_LIMIT') {
         return res.status(409).json({
           error: 'Maximum of 3 active devices reached. Remove a device or ask an admin to revoke one.',
