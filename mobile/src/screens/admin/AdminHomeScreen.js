@@ -36,6 +36,26 @@ export default function AdminHomeScreen({ navigation }) {
       >
         Completed Jobs
       </Button>
+      <Button
+        onPress={() => navigation.navigate('AdminAssignVisit')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Assign Visit
+      </Button>
+      <Button
+        variant="outline"
+        onPress={() => navigation.navigate('AdminCreateJob')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Create Job
+      </Button>
+      <Button
+        variant="outline"
+        onPress={() => navigation.navigate('AdminCreateCustomer')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Create Customer
+      </Button>
     </ScreenContainer>
   );
 }

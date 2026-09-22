@@ -14,6 +14,9 @@ import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
 import AdminHomeScreen from '../screens/admin/AdminHomeScreen';
 import AdminVisitsScreen from '../screens/admin/AdminVisitsScreen';
 import AdminVisitDetailScreen from '../screens/admin/AdminVisitDetailScreen';
+import AdminCreateCustomerScreen from '../screens/admin/AdminCreateCustomerScreen';
+import AdminCreateJobScreen from '../screens/admin/AdminCreateJobScreen';
+import AdminAssignVisitScreen from '../screens/admin/AdminAssignVisitScreen';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -100,6 +103,21 @@ export default function AppStack() {
             name="AdminVisitDetail"
             component={AdminVisitDetailScreen}
             options={{ title: 'Visit Detail' }}
+          />
+          <Stack.Screen
+            name="AdminCreateCustomer"
+            component={AdminCreateCustomerScreen}
+            options={{ title: 'New Customer' }}
+          />
+          <Stack.Screen
+            name="AdminCreateJob"
+            component={AdminCreateJobScreen}
+            options={{ title: 'New Job' }}
+          />
+          <Stack.Screen
+            name="AdminAssignVisit"
+            component={AdminAssignVisitScreen}
+            options={{ title: 'Assign Visit' }}
           />
         </>
       )}

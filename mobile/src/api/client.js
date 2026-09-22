@@ -101,6 +101,28 @@ export function getAssignedJobs(date, accessToken) {
   return request(`/jobs/assigned?date=${encodeURIComponent(date)}`, { accessToken });
 }
 
+// Admin-only. total_visits is optional.
+export function createJob(job, accessToken) {
+  return request('/jobs', { method: 'POST', body: job, accessToken });
+}
+
+// Creates a NEW visit (next visit_number) for a job, assigned to user_id on
+// date ('YYYY-MM-DD'). Admin-only.
+export function assignVisit({ jobId, userId, date }, accessToken) {
+  return request(`/jobs/${jobId}/assign`, {
+    method: 'POST',
+    body: { user_id: userId, date },
+    accessToken,
+  });
+}
+
+export function unassignVisit({ jobId, userId, date }, accessToken) {
+  return request(
+    `/jobs/${jobId}/assign?user_id=${userId}&date=${encodeURIComponent(date)}`,
+    { method: 'DELETE', accessToken }
+  );
+}
+
 // --- Offline-first sync: upserts by client_id, safe to retry ---
 
 export function syncTimeEntry(payload, accessToken) {
@@ -181,6 +203,26 @@ export function updateUserTechTypes(userId, techTypes, accessToken) {
   return request(`/admin/users/${userId}/tech-types`, {
     method: 'PUT',
     body: { tech_types: techTypes },
+    accessToken,
+  });
+}
+
+// --- customers (directory for the job-creation picker) ---
+
+export function listCustomers(accessToken) {
+  return request('/admin/customers', { accessToken });
+}
+
+export function createCustomer(customer, accessToken) {
+  return request('/admin/customers', { method: 'POST', body: customer, accessToken });
+}
+
+// Updates an EXISTING visit's tech/date in place (keeps its visit_number)
+// — for correcting a dispatch mistake, not logging a new day of work.
+export function reassignVisit(assignmentId, { userId, date }, accessToken) {
+  return request(`/admin/visits/${assignmentId}/reassign`, {
+    method: 'PATCH',
+    body: { user_id: userId, assigned_date: date },
     accessToken,
   });
 }
