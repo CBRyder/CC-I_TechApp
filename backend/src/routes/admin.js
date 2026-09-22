@@ -85,7 +85,14 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
                 ELSE CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'at_shop' ELSE 'ready' END
               END AS status
        FROM visits
-       WHERE ($1::text IS NULL OR job_number ILIKE '%' || $1 || '%' OR visit_code ILIKE '%' || $1 || '%')
+       WHERE ($1::text IS NULL
+         OR job_number ILIKE '%' || $1 || '%'
+         OR visit_code ILIKE '%' || $1 || '%'
+         OR job_name ILIKE '%' || $1 || '%'
+         OR customer_name ILIKE '%' || $1 || '%'
+         OR location_name ILIKE '%' || $1 || '%'
+         OR assigned_to ILIKE '%' || $1 || '%'
+       )
        ORDER BY assigned_date DESC, job_number, visit_number`,
       [q || null]
     );
@@ -378,6 +385,31 @@ router.put('/job-completions/:completionId/po', requireAuth, requireRole('admin'
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to set PO number' });
+  }
+});
+
+// Un-marks a completed visit as completed (clears submitted_at, keeps the
+// notes/parts/PO already recorded) — for an admin correcting a mistake
+// (marked done too early, needs more work, etc.). It'll show as
+// "in_progress" again on the admin dashboard. Note this doesn't reopen
+// the underlying job_segment (ended_at stays set) — it's an admin-side
+// correction to the record, not a way for the tech to resume clocking on
+// it from their own app.
+router.post('/job-completions/:completionId/reopen', requireAuth, requireRole('admin'), async (req, res) => {
+  const completionId = Number(req.params.completionId);
+
+  try {
+    const result = await pool.query(
+      `UPDATE job_completions SET submitted_at = NULL WHERE id = $1 RETURNING id, submitted_at`,
+      [completionId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Completion not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to reopen visit' });
   }
 });
 
