@@ -38,13 +38,10 @@ export default function AdminHomeScreen({ navigation }) {
       </Button>
 
       <SectionHeader>Account</SectionHeader>
-      <Button variant="outline" onPress={() => navigation.navigate('SwitchAccount')} style={{ width: '100%' }}>
-        Switch Account
-      </Button>
       <Button
         variant="text"
         onPress={logout}
-        style={{ marginTop: spacing.lg, width: '100%' }}
+        style={{ width: '100%' }}
       >
         Log Out
       </Button>
