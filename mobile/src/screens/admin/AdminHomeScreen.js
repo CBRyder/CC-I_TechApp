@@ -7,8 +7,10 @@ import { ScreenContainer, Button, SectionHeader, spacing } from '../../ui';
 // Landing screen for admin-only accounts (holding 'admin' but not 'tech') —
 // the regular Home screen is entirely clock-in/job-tracking UI that means
 // nothing without the tech role, so admin-only accounts never even see
-// those routes (see AppStack's isAdminOnly gating). This is deliberately
-// small: it grows as more admin features land (visit oversight, etc.).
+// those routes (see AppStack's isTech gating). Also reachable as a plain
+// destination (not the landing screen) for tech+admin accounts, via the
+// "Admin" button on the regular Home — one shared hub for every admin
+// feature instead of scattering entry points across the app.
 export default function AdminHomeScreen({ navigation }) {
   const { user, logout } = useAuth();
 
@@ -27,6 +29,12 @@ export default function AdminHomeScreen({ navigation }) {
       <SectionHeader>Admin</SectionHeader>
       <Button onPress={() => navigation.navigate('AdminUsers')} style={{ width: '100%' }}>
         Users &amp; Roles
+      </Button>
+      <Button
+        onPress={() => navigation.navigate('AdminVisits')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Completed Jobs
       </Button>
 
       <SectionHeader>Account</SectionHeader>

@@ -12,6 +12,8 @@ import PartsListScreen from '../screens/parts/PartsListScreen';
 import ComponentGalleryScreen from '../screens/dev/ComponentGalleryScreen';
 import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
 import AdminHomeScreen from '../screens/admin/AdminHomeScreen';
+import AdminVisitsScreen from '../screens/admin/AdminVisitsScreen';
+import AdminVisitDetailScreen from '../screens/admin/AdminVisitDetailScreen';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -79,17 +81,25 @@ export default function AppStack() {
       />
       {isAdmin && (
         <>
-          {!isTech && (
-            <Stack.Screen
-              name="AdminHome"
-              component={AdminHomeScreen}
-              options={{ title: 'CC-I Tech App' }}
-            />
-          )}
+          <Stack.Screen
+            name="AdminHome"
+            component={AdminHomeScreen}
+            options={{ title: isTech ? 'Admin' : 'CC-I Tech App' }}
+          />
           <Stack.Screen
             name="AdminUsers"
             component={AdminUsersScreen}
             options={{ title: 'Users & Roles' }}
+          />
+          <Stack.Screen
+            name="AdminVisits"
+            component={AdminVisitsScreen}
+            options={{ title: 'Completed Jobs' }}
+          />
+          <Stack.Screen
+            name="AdminVisitDetail"
+            component={AdminVisitDetailScreen}
+            options={{ title: 'Visit Detail' }}
           />
         </>
       )}

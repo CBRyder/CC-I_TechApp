@@ -146,4 +146,31 @@ export function updateUserRoles(userId, roles, accessToken) {
   });
 }
 
+// Soft delete — the account stops showing up anywhere, but its history stays.
+export function deleteUser(userId, accessToken) {
+  return request(`/admin/users/${userId}`, { method: 'DELETE', accessToken });
+}
+
+// status: 'incoming' | 'in_progress' | 'completed'. q: free-text search
+// against job number / visit code.
+export function listAdminVisits({ status, q } = {}, accessToken) {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (q) params.set('q', q);
+  const qs = params.toString();
+  return request(`/admin/visits${qs ? `?${qs}` : ''}`, { accessToken });
+}
+
+export function getAdminVisit(assignmentId, accessToken) {
+  return request(`/admin/visits/${assignmentId}`, { accessToken });
+}
+
+export function setCompletionPO(completionId, poNumber, accessToken) {
+  return request(`/admin/job-completions/${completionId}/po`, {
+    method: 'PUT',
+    body: { po_number: poNumber },
+    accessToken,
+  });
+}
+
 export { ApiError };

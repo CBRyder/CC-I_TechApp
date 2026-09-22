@@ -72,10 +72,10 @@ export default function HomeScreen({ navigation }) {
         <Button
           mode="outlined"
           icon="shield-account-outline"
-          onPress={() => navigation.navigate('AdminUsers')}
+          onPress={() => navigation.navigate('AdminHome')}
           style={styles.adminButton}
         >
-          Admin: Users &amp; Roles
+          Admin
         </Button>
       )}
 
