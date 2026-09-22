@@ -141,6 +141,7 @@ export function AuthProvider({ children }) {
     await SecureStore.setItemAsync(ACTIVE_USER_KEY, String(userId));
     setAccessToken(newAccessToken);
     setUser(me);
+    return me;
   }, []);
 
   // Actually forgets a remembered account (unlike logout). If it was the

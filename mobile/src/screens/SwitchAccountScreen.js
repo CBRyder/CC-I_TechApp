@@ -24,8 +24,12 @@ export default function SwitchAccountScreen({ navigation }) {
     if (accountId === user?.id) return; // already active
     setSwitching(accountId);
     try {
-      await switchAccount(accountId);
-      navigation.navigate('Home');
+      const switchedTo = await switchAccount(accountId);
+      // Not always 'Home' — an admin-only account (no 'tech' role) doesn't
+      // even have that route registered (see AppStack), so it'd fail to
+      // navigate. Route to whichever landing screen actually exists for
+      // whichever account this just became.
+      navigation.navigate(switchedTo.roles?.includes('tech') ? 'Home' : 'AdminHome');
     } catch (err) {
       // Most likely cause: this account's remembered refresh token is
       // dead (expired, revoked, or points at a backend/database that no

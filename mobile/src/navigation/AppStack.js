@@ -11,6 +11,7 @@ import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
 import ComponentGalleryScreen from '../screens/dev/ComponentGalleryScreen';
 import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
+import AdminHomeScreen from '../screens/admin/AdminHomeScreen';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -23,48 +24,74 @@ export default function AppStack() {
   const { user } = useAuth();
   const isDev = user?.roles?.includes('dev');
   const isAdmin = user?.roles?.includes('admin');
+  const isTech = user?.roles?.includes('tech');
+
+  // Every tech-facing screen (clock in/out, job selection, parts, hours) is
+  // meaningless — and per-account local data it shouldn't even touch — for
+  // an admin-only account (admin without tech), so those routes aren't
+  // registered at all for one, not just hidden behind nav links. It lands
+  // on AdminHome instead of Home and has no way to reach any of them, not
+  // even by guessing a route name.
+  const initialRouteName = isTech ? 'Home' : isAdmin ? 'AdminHome' : 'Settings';
 
   return (
-    <Stack.Navigator>
-      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'CC-I Tech App' }} />
-      <Stack.Screen
-        name="JobDetail"
-        component={JobDetailScreen}
-        options={{ title: 'Job Details' }}
-      />
-      <Stack.Screen
-        name="CompleteJob"
-        component={CompleteJobScreen}
-        options={{ title: 'Complete Job' }}
-      />
-      <Stack.Screen
-        name="VisitDetail"
-        component={VisitDetailScreen}
-        options={{ title: 'Visit Details' }}
-      />
-      <Stack.Screen
-        name="HoursHistory"
-        component={HoursHistoryScreen}
-        options={{ title: 'Hours' }}
-      />
+    <Stack.Navigator initialRouteName={initialRouteName}>
+      {isTech && (
+        <>
+          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'CC-I Tech App' }} />
+          <Stack.Screen
+            name="JobDetail"
+            component={JobDetailScreen}
+            options={{ title: 'Job Details' }}
+          />
+          <Stack.Screen
+            name="CompleteJob"
+            component={CompleteJobScreen}
+            options={{ title: 'Complete Job' }}
+          />
+          <Stack.Screen
+            name="VisitDetail"
+            component={VisitDetailScreen}
+            options={{ title: 'Visit Details' }}
+          />
+          <Stack.Screen
+            name="HoursHistory"
+            component={HoursHistoryScreen}
+            options={{ title: 'Hours' }}
+          />
+          <Stack.Screen
+            name="PartsCategory"
+            component={PartsCategoryScreen}
+            options={{ title: 'Parts Used' }}
+          />
+          <Stack.Screen
+            name="PartsList"
+            component={PartsListScreen}
+            options={{ title: 'Select Part' }}
+          />
+        </>
+      )}
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
       <Stack.Screen
         name="SwitchAccount"
         component={SwitchAccountScreen}
         options={{ title: 'Switch Account' }}
       />
-      <Stack.Screen
-        name="PartsCategory"
-        component={PartsCategoryScreen}
-        options={{ title: 'Parts Used' }}
-      />
-      <Stack.Screen name="PartsList" component={PartsListScreen} options={{ title: 'Select Part' }} />
       {isAdmin && (
-        <Stack.Screen
-          name="AdminUsers"
-          component={AdminUsersScreen}
-          options={{ title: 'Users & Roles' }}
-        />
+        <>
+          {!isTech && (
+            <Stack.Screen
+              name="AdminHome"
+              component={AdminHomeScreen}
+              options={{ title: 'CC-I Tech App' }}
+            />
+          )}
+          <Stack.Screen
+            name="AdminUsers"
+            component={AdminUsersScreen}
+            options={{ title: 'Users & Roles' }}
+          />
+        </>
       )}
       {isDev && (
         <Stack.Screen

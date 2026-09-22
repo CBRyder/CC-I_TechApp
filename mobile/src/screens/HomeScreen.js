@@ -68,6 +68,17 @@ export default function HomeScreen({ navigation }) {
         Hi, {user?.full_name}
       </Text>
 
+      {user?.roles?.includes('admin') && (
+        <Button
+          mode="outlined"
+          icon="shield-account-outline"
+          onPress={() => navigation.navigate('AdminUsers')}
+          style={styles.adminButton}
+        >
+          Admin: Users &amp; Roles
+        </Button>
+      )}
+
       {!isClockedIn && (
         <>
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>
@@ -197,6 +208,10 @@ function initials(name) {
 const styles = StyleSheet.create({
   greeting: {
     marginTop: 16,
+  },
+  adminButton: {
+    marginTop: 12,
+    alignSelf: 'stretch',
   },
   subtitle: {
     marginTop: 8,
