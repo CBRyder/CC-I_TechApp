@@ -42,6 +42,13 @@ router.post('/register', async (req, res) => {
 
 const jwt = require('jsonwebtoken');
 
+// How long a refresh token is good for from its last use — not from when
+// it was issued. Sliding, not absolute: /refresh below bumps this forward
+// on every successful call, so an account used at least once within any
+// 365-day stretch never goes stale. Only a fully idle device (or an
+// explicit logout/remove) ever actually hits this.
+const REFRESH_TOKEN_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
+
 router.post('/login', async (req, res) => {
   const { identifier, password } = req.body;
 
@@ -78,7 +85,7 @@ router.post('/login', async (req, res) => {
 
     const refreshToken = crypto.randomBytes(40).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_LIFETIME_MS);
 
     await pool.query(
       'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
@@ -125,6 +132,14 @@ router.post('/refresh', async (req, res) => {
     if (!stored) {
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
+
+    // Slide the window forward — this use just proved the token is still
+    // good, so it's good for another full lifetime from now, not just
+    // whatever was left of the original 365 days from login.
+    await pool.query('UPDATE refresh_tokens SET expires_at = $1 WHERE id = $2', [
+      new Date(Date.now() + REFRESH_TOKEN_LIFETIME_MS),
+      stored.id,
+    ]);
 
     const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [stored.user_id]);
     const user = userResult.rows[0];
