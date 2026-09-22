@@ -17,7 +17,8 @@ const app = express();
 // login abuse controls. Do not trust arbitrary forwarded hops.
 app.set('trust proxy', 1);
 
-app.use(express.json());
+// JSON endpoints never need large request bodies; photos upload directly to private R2.
+app.use(express.json({ limit: '100kb' }));
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'cc-i-techapp-backend' });
