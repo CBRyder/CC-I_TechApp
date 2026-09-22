@@ -235,4 +235,12 @@ export function setCompletionPO(completionId, poNumber, accessToken) {
   });
 }
 
+// Un-marks a completed visit as completed — shows as "in_progress" again.
+export function reopenCompletion(completionId, accessToken) {
+  return request(`/admin/job-completions/${completionId}/reopen`, {
+    method: 'POST',
+    accessToken,
+  });
+}
+
 export { ApiError };

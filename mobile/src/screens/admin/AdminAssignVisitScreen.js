@@ -7,6 +7,7 @@ import {
   SectionHeader,
   Button,
   TextField,
+  Dropdown,
   ListRow,
   SegmentedTabs,
   EmptyState,
@@ -33,10 +34,13 @@ export default function AdminAssignVisitScreen() {
   const [techs, setTechs] = useState([]);
   const [openVisits, setOpenVisits] = useState([]);
 
-  const [selectedJob, setSelectedJob] = useState(null);
+  const [selectedJobId, setSelectedJobId] = useState(null);
   const [selectedVisit, setSelectedVisit] = useState(null);
-  const [selectedTech, setSelectedTech] = useState(null);
+  const [selectedTechId, setSelectedTechId] = useState(null);
   const [date, setDate] = useState(todayLocalDate());
+
+  const selectedJob = jobs.find((j) => j.id === selectedJobId) || null;
+  const selectedTech = techs.find((t) => t.id === selectedTechId) || null;
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -58,9 +62,9 @@ export default function AdminAssignVisitScreen() {
   );
 
   const resetSelections = () => {
-    setSelectedJob(null);
+    setSelectedJobId(null);
     setSelectedVisit(null);
-    setSelectedTech(null);
+    setSelectedTechId(null);
     setDate(todayLocalDate());
     setError(null);
     setSuccess(null);
@@ -105,9 +109,9 @@ export default function AdminAssignVisitScreen() {
         setSuccess(`Reassigned ${selectedVisit.visit_code} to ${selectedTech.full_name}.`);
       }
       setOpenVisits((current) => current.filter((v) => v.assignment_id !== selectedVisit?.assignment_id));
-      setSelectedJob(null);
+      setSelectedJobId(null);
       setSelectedVisit(null);
-      setSelectedTech(null);
+      setSelectedTechId(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -129,23 +133,16 @@ export default function AdminAssignVisitScreen() {
       {mode === 'New Visit' ? (
         <>
           <SectionHeader>Job</SectionHeader>
-          {jobs.length === 0 ? (
-            <EmptyState message="No jobs found." />
-          ) : (
-            jobs.map((job) => (
-              <ListRow
-                key={job.id}
-                title={job.name}
-                subtitle={`${job.job_number} · ${job.customer_name || 'No umbrella'}`}
-                onPress={() => setSelectedJob(job)}
-                trailing={
-                  selectedJob?.id === job.id ? (
-                    <Text style={{ color: theme.colors.primary, fontWeight: '700' }}>Selected</Text>
-                  ) : null
-                }
-              />
-            ))
-          )}
+          <Dropdown
+            label="Job"
+            placeholder="Select a job"
+            value={selectedJobId}
+            options={jobs.map((job) => ({
+              key: job.id,
+              label: `${job.name} (${job.job_number}${job.customer_name ? ` · ${job.customer_name}` : ''})`,
+            }))}
+            onSelect={setSelectedJobId}
+          />
         </>
       ) : (
         <>
@@ -171,26 +168,16 @@ export default function AdminAssignVisitScreen() {
       )}
 
       <SectionHeader>Assign To</SectionHeader>
-      {techs.length === 0 ? (
-        <EmptyState message="No techs found." />
-      ) : (
-        techs.map((tech) => (
-          <ListRow
-            key={tech.id}
-            title={tech.full_name}
-            subtitle={tech.username}
-            onPress={() => setSelectedTech(tech)}
-            trailing={
-              selectedTech?.id === tech.id ? (
-                <Text style={{ color: theme.colors.primary, fontWeight: '700' }}>Selected</Text>
-              ) : null
-            }
-          />
-        ))
-      )}
+      <Dropdown
+        label="Tech"
+        placeholder="Select a tech"
+        value={selectedTechId}
+        options={techs.map((tech) => ({ key: tech.id, label: `${tech.full_name} (${tech.username})` }))}
+        onSelect={setSelectedTechId}
+      />
 
       <SectionHeader>Date</SectionHeader>
-      <TextField label="YYYY-MM-DD" value={date} onChangeText={setDate} />
+      <TextField label="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} />
 
       {error ? (
         <Text style={{ color: theme.colors.error, marginBottom: spacing.sm }}>{error}</Text>

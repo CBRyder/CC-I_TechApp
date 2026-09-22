@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { View, Alert } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/client';
@@ -23,6 +23,8 @@ export default function AdminVisitDetailScreen({ route }) {
   const [locationName, setLocationName] = useState('');
   const [savingJob, setSavingJob] = useState(false);
   const [jobSaved, setJobSaved] = useState(false);
+
+  const [reopening, setReopening] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -73,6 +75,30 @@ export default function AdminVisitDetailScreen({ route }) {
     }
   };
 
+  const confirmReopen = () => {
+    Alert.alert(
+      'Reopen this visit?',
+      "It'll show as In Progress again. The notes, parts, and PO already recorded stay as they are.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reopen',
+          onPress: async () => {
+            setReopening(true);
+            try {
+              await api.reopenCompletion(visit.completion.id, accessToken);
+              await load();
+            } catch (err) {
+              setError(err.message);
+            } finally {
+              setReopening(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (error) {
     return (
       <ScreenContainer>
@@ -107,6 +133,17 @@ export default function AdminVisitDetailScreen({ route }) {
         <Text variant="bodySmall" style={{ opacity: 0.7 }}>
           Arrived {new Date(visit.arrived_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
         </Text>
+      )}
+      {visit.completion?.submitted_at && (
+        <Button
+          variant="outline"
+          onPress={confirmReopen}
+          loading={reopening}
+          disabled={reopening}
+          style={{ marginTop: spacing.md }}
+        >
+          Reopen Visit
+        </Button>
       )}
 
       <SectionHeader>Umbrella &amp; Location</SectionHeader>

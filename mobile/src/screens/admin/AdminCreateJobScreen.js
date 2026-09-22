@@ -1,8 +1,9 @@
 import React, { useCallback, useState } from 'react';
+import { View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/client';
-import { ScreenContainer, SectionHeader, Button, TextField, ListRow, spacing } from '../../ui';
+import { ScreenContainer, SectionHeader, Button, TextField, Dropdown, spacing } from '../../ui';
 import { Text, useTheme } from 'react-native-paper';
 
 // job_number suggestions are purely a convenience default — admin can
@@ -25,7 +26,8 @@ export default function AdminCreateJobScreen({ navigation }) {
   const theme = useTheme();
 
   const [customers, setCustomers] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId) || null;
 
   const [jobNumber, setJobNumber] = useState('');
   const [jobNumberTouched, setJobNumberTouched] = useState(false);
@@ -88,23 +90,41 @@ export default function AdminCreateJobScreen({ navigation }) {
   return (
     <ScreenContainer>
       <SectionHeader>Customer (Umbrella)</SectionHeader>
-      {customers.map((customer) => (
-        <ListRow
-          key={customer.id}
-          title={customer.name}
-          subtitle={customer.contact_name || undefined}
-          onPress={() => setSelectedCustomer(customer)}
-          trailing={
-            selectedCustomer?.id === customer.id ? (
-              <Text style={{ color: theme.colors.primary, fontWeight: '700' }}>Selected</Text>
-            ) : null
-          }
-        />
-      ))}
+      <Dropdown
+        label="Customer"
+        placeholder="Select a customer"
+        value={selectedCustomerId}
+        options={customers.map((c) => ({ key: c.id, label: c.name }))}
+        onSelect={setSelectedCustomerId}
+      />
+      {selectedCustomer && (
+        <View style={{ marginBottom: spacing.sm }}>
+          {selectedCustomer.contact_name ? (
+            <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+              Contact: {selectedCustomer.contact_name}
+            </Text>
+          ) : null}
+          {selectedCustomer.contact_phone ? (
+            <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+              Phone: {selectedCustomer.contact_phone}
+            </Text>
+          ) : null}
+          {selectedCustomer.contact_email ? (
+            <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+              Email: {selectedCustomer.contact_email}
+            </Text>
+          ) : null}
+          {selectedCustomer.notes ? (
+            <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+              Notes: {selectedCustomer.notes}
+            </Text>
+          ) : null}
+        </View>
+      )}
       <Button
         variant="text"
         onPress={() => navigation.navigate('AdminCreateCustomer')}
-        style={{ marginTop: spacing.sm }}
+        style={{ marginBottom: spacing.sm }}
       >
         + New Customer
       </Button>
