@@ -162,13 +162,14 @@ router.put('/sync', requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO job_segments (time_entry_id, job_id, user_id, client_id, state, started_at, ended_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO job_segments (time_entry_id, job_id, user_id, client_id, state, started_at, ended_at, synced_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
        ON CONFLICT (user_id, client_id) DO UPDATE
          SET state = EXCLUDED.state,
              started_at = EXCLUDED.started_at,
-             ended_at = EXCLUDED.ended_at
-       RETURNING id, client_id, job_id, state, started_at, ended_at`,
+             ended_at = EXCLUDED.ended_at,
+             synced_at = now()
+       RETURNING id, client_id, job_id, state, started_at, ended_at, synced_at`,
       [timeEntryId, job_id, req.user.userId, client_id, state, started_at, ended_at || null]
     );
     res.json(result.rows[0]);
