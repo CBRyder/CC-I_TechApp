@@ -73,11 +73,8 @@ async function recordLoginAttempt(client, identifierHash, ipAddress, deviceHash,
 }
 
 function signAccessToken(userId, roles, sessionId) {
-  return jwt.sign(
-    { userId, roles, sessionId },
-    process.env.JWT_SECRET,
-    { expiresIn: '15m' }
-  );
+  const expiresIn = roles.includes('admin') ? '10m' : '15m';
+  return jwt.sign({ userId, roles, sessionId }, process.env.JWT_SECRET, { expiresIn });
 }
 
 async function enforceDeviceLimit(client, userId, deviceId) {
