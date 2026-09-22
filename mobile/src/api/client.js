@@ -164,6 +164,10 @@ export function listAdminSessions(accessToken) {
   return request('/admin/sessions', { accessToken });
 }
 
+export function listAdminAudit(accessToken, limit = 100) {
+  return request(`/admin/audit?limit=${encodeURIComponent(limit)}`, { accessToken });
+}
+
 export function revokeAdminSession(sessionId, accessToken) {
   return request(`/admin/sessions/${sessionId}`, { method: 'DELETE', accessToken });
 }
