@@ -150,7 +150,7 @@ export function AuthProvider({ children }) {
     // later by device/session administration.
     if (account?.refreshToken) {
       try {
-        await api.logout(account.refreshToken);
+        await api.logout(account.refreshToken, await getDeviceId());
       } catch {}
       await upsertAccount({ ...account, refreshToken: null });
     }
@@ -216,7 +216,7 @@ export function AuthProvider({ children }) {
 
     try {
       const deviceId = await getDeviceId();
-      const refreshed = await api.refresh(account.refreshToken, deviceId);
+      const refreshed = await rotateRefreshToken(account.id, account.refreshToken, deviceId);
 
       await upsertAccount({
         ...account,
