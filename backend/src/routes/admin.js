@@ -381,4 +381,84 @@ router.put('/job-completions/:completionId/po', requireAuth, requireRole('admin'
   }
 });
 
+// A reusable directory of customers ("umbrellas") for the job-creation
+// picker — see migration 014. Decoupled from jobs (no FK); creating a job
+// still just takes customer_name as free text, this is only where that
+// name comes from when creating one through the app instead of retyping.
+router.get('/customers', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM customers ORDER BY name');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch customers' });
+  }
+});
+
+router.post('/customers', requireAuth, requireRole('admin'), async (req, res) => {
+  const { name, contact_name, contact_phone, contact_email, notes } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'name is required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO customers (name, contact_name, contact_phone, contact_email, notes)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [name.trim(), contact_name || null, contact_phone || null, contact_email || null, notes || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'A customer with that name already exists' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Failed to create customer' });
+  }
+});
+
+// Reassigns an EXISTING visit to a different tech and/or date, in place —
+// unlike POST /jobs/:jobId/assign (which always creates a new visit with
+// the next visit_number), this keeps the same visit_number/identity. For
+// a dispatcher correcting a mistake, not for logging a new day of work.
+router.patch('/visits/:assignmentId/reassign', requireAuth, requireRole('admin'), async (req, res) => {
+  const assignmentId = Number(req.params.assignmentId);
+  const { user_id, assigned_date } = req.body;
+
+  if (!user_id) {
+    return res.status(400).json({ error: 'user_id is required' });
+  }
+  if (!assigned_date || !/^\d{4}-\d{2}-\d{2}$/.test(assigned_date)) {
+    return res.status(400).json({ error: 'assigned_date is required, as YYYY-MM-DD' });
+  }
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE id = $1', [user_id]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const result = await pool.query(
+      `UPDATE job_assignments SET user_id = $1, assigned_date = $2
+       WHERE id = $3
+       RETURNING id AS assignment_id, job_id, user_id, assigned_date, visit_number`,
+      [user_id, assigned_date, assignmentId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Visit not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({
+        error: 'That tech already has a visit for this job on this date',
+      });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Failed to reassign visit' });
+  }
+});
+
 module.exports = router;

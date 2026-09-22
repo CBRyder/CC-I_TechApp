@@ -49,7 +49,7 @@ router.get('/:jobId/history', requireAuth, async (req, res) => {
 // Admin-only: create a job. Previously jobs could only be seeded via
 // migration — this is what the admin "add a job" screen calls.
 router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
-  const { job_number, name, address, customer_name, total_visits } = req.body;
+  const { job_number, name, address, customer_name, location_name, total_visits } = req.body;
 
   if (!job_number || !name) {
     return res.status(400).json({ error: 'job_number and name are required' });
@@ -60,13 +60,16 @@ router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO jobs (job_number, name, address, customer_name, total_visits)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, job_number, name, address, customer_name, status, total_visits`,
-      [job_number, name, address || null, customer_name || null, total_visits ?? null]
+      `INSERT INTO jobs (job_number, name, address, customer_name, location_name, total_visits)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, job_number, name, address, customer_name, location_name, status, total_visits`,
+      [job_number, name, address || null, customer_name || null, location_name || null, total_visits ?? null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'A job with that job number already exists' });
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to create job' });
   }
