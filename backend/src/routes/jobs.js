@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
@@ -113,6 +114,7 @@ router.post('/:jobId/assign', requireAuth, requireRole('admin'), async (req, res
       await pool.query('SELECT visit_number FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3', [jobId, user_id, date])
     ).rows[0].visit_number;
     const job = jobResult.rows[0];
+    await audit({ actorUserId: req.user.userId, targetUserId: Number(user_id), action: 'job_visit_assigned', resourceType: 'job_assignment', resourceId: inserted.rows[0]?.visit_number ?? visitNumber, ipAddress: req.ip, metadata: { job_id: Number(jobId), assigned_date: date } });
     res.status(201).json({
       jobId: Number(jobId), userId: Number(user_id), date, visitNumber,
       visitCode: `${job.job_number}-V${visitNumber}${job.total_visits != null ? `-${job.total_visits}` : ''}`,
@@ -128,7 +130,8 @@ router.delete('/:jobId/assign', requireAuth, requireRole('admin'), async (req, r
   const { user_id, date } = req.query;
   if (!user_id || !date || !DATE_RE.test(date)) return res.status(400).json({ error: 'user_id and date are required' });
   try {
-    await pool.query('DELETE FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3', [jobId, user_id, date]);
+    const result = await pool.query('DELETE FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3 RETURNING id', [jobId, user_id, date]);
+    if (result.rows.length) await audit({ actorUserId: req.user.userId, targetUserId: Number(user_id), action: 'job_visit_unassigned', resourceType: 'job_assignment', resourceId: result.rows[0].id, ipAddress: req.ip, metadata: { job_id: Number(jobId), assigned_date: date } });
     res.status(204).send();
   } catch (err) {
     console.error(err);
