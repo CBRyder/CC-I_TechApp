@@ -107,9 +107,16 @@ async function runSyncPass(accessToken, refreshAccessToken, isRetry) {
   } catch (err) {
     if (err instanceof ApiError && err.status === 401 && !isRetry) {
       // Likely offline long enough for the 15-min access token to expire —
-      // refresh once and retry the whole pass.
-      const newToken = await refreshAccessToken();
-      return runSyncPass(newToken, refreshAccessToken, true);
+      // refresh once and retry the whole pass. If the refresh token itself
+      // is also invalid/expired, refreshAccessToken() logs the account out
+      // and throws — treat that the same as any other sync failure rather
+      // than letting it escape as an unhandled rejection.
+      try {
+        const newToken = await refreshAccessToken();
+        return runSyncPass(newToken, refreshAccessToken, true);
+      } catch (refreshErr) {
+        return { ...counts, error: refreshErr.message };
+      }
     }
     // Network error, server unreachable, R2 not configured yet, etc. —
     // leave whatever's left unsynced. The next trigger (reconnect, app
