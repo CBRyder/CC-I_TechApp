@@ -1,16 +1,17 @@
 import * as SQLite from 'expo-sqlite';
 import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 
 const LOCAL_DB_KEY = 'local-db-key';
 
 async function getLocalDbKey() {
   let key = await SecureStore.getItemAsync(LOCAL_DB_KEY);
   if (!key) {
-    const bytes = new Uint8Array(32);
-    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
-    else throw new Error('Secure random generator unavailable; cannot initialize encrypted local storage');
+    const bytes = await Crypto.getRandomBytesAsync(32);
     key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-    await SecureStore.setItemAsync(LOCAL_DB_KEY, key, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+    await SecureStore.setItemAsync(LOCAL_DB_KEY, key, {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
   }
   return key;
 }
