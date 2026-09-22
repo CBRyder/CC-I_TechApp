@@ -1,4 +1,19 @@
 import * as SQLite from 'expo-sqlite';
+import * as SecureStore from 'expo-secure-store';
+
+const LOCAL_DB_KEY = 'local-db-key';
+
+async function getLocalDbKey() {
+  let key = await SecureStore.getItemAsync(LOCAL_DB_KEY);
+  if (!key) {
+    const bytes = new Uint8Array(32);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    else throw new Error('Secure random generator unavailable; cannot initialize encrypted local storage');
+    key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    await SecureStore.setItemAsync(LOCAL_DB_KEY, key, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+  }
+  return key;
+}
 
 // Every read/write in this file awaits this instead of opening the database
 // directly. TrackingContext and SettingsContext both touch local data from
@@ -47,6 +62,15 @@ async function runTransaction(fn) {
 // same setup regardless via getDb()).
 async function setupDb() {
   const db = await SQLite.openDatabaseAsync('tracking.db');
+
+  // SQLCipher is enabled for native production builds. Expo Go does not ship
+  // SQLCipher, so development clients may use normal SQLite; production
+  // builds fail closed rather than pretending the database is encrypted.
+  if (!__DEV__) {
+    if (typeof db.execAsync !== 'function') throw new Error('Encrypted SQLite is unavailable');
+    const key = await getLocalDbKey();
+    await db.execAsync(`PRAGMA key = '${key}'; PRAGMA cipher_memory_security = ON;`);
+  }
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
 
