@@ -543,6 +543,7 @@ router.put('/jobs/:jobId', requireAuth, requireRole('admin'), async (req, res) =
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
+    await audit({ actorUserId: req.user.userId, action: 'job_metadata_updated', resourceType: 'job', resourceId: jobId, ipAddress: req.ip });
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -564,6 +565,7 @@ router.put('/job-completions/:completionId/po', requireAuth, requireRole('admin'
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Completion not found' });
     }
+    await audit({ actorUserId: req.user.userId, action: 'completion_po_updated', resourceType: 'job_completion', resourceId: completionId, ipAddress: req.ip });
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -589,6 +591,7 @@ router.post('/job-completions/:completionId/reopen', requireAuth, requireRole('a
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Completion not found' });
     }
+    await audit({ actorUserId: req.user.userId, action: 'completion_reopened', resourceType: 'job_completion', resourceId: completionId, ipAddress: req.ip });
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
