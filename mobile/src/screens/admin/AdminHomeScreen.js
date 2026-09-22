@@ -12,7 +12,7 @@ import { ScreenContainer, Button, SectionHeader, spacing } from '../../ui';
 // "Admin" button on the regular Home — one shared hub for every admin
 // feature instead of scattering entry points across the app.
 export default function AdminHomeScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   return (
     <ScreenContainer>
@@ -35,14 +35,6 @@ export default function AdminHomeScreen({ navigation }) {
         style={{ marginTop: spacing.sm, width: '100%' }}
       >
         Completed Jobs
-      </Button>
-          
-      <Button
-        variant="text"
-        onPress={logout}
-        style={{ width: '100%' }}
-      >
-        Log Out
       </Button>
     </ScreenContainer>
   );

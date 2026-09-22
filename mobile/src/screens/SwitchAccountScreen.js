@@ -37,6 +37,17 @@ export default function SwitchAccountScreen({ navigation }) {
     }
   }, [user, navigation]);
 
+  const confirmReturnToLogin = () => {
+    Alert.alert(
+      'Return to login screen?',
+      "You'll be signed out of this session. This account stays remembered on this device, so you can jump right back into it from the login screen — nothing is deleted.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Return to Login Screen', onPress: logout },
+      ]
+    );
+  };
+
   const confirmRemove = (account) => {
     Alert.alert(
       'Remove account?',
@@ -106,8 +117,8 @@ export default function SwitchAccountScreen({ navigation }) {
       )}
 
       <SectionHeader>Add Another Account</SectionHeader>
-      <Button variant="outline" onPress={logout}>
-        Log Out to Add One
+      <Button variant="outline" onPress={confirmReturnToLogin}>
+        Return to Login Screen
       </Button>
     </ScreenContainer>
   );

@@ -13,7 +13,7 @@ const STATE_LABELS = {
 };
 
 export default function HomeScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   // Only for a tech who's exclusively shop — a tech who's both sees the
   // regular road-style labels (Pause/Finish Job); the underlying action is
   // identical either way, this only changes wording.
@@ -186,10 +186,6 @@ export default function HomeScreen({ navigation }) {
           </Card.Content>
         </Card>
       )}
-
-      <Button mode="text" onPress={logout} style={styles.logoutButton}>
-        Log Out
-      </Button>
     </ScreenContainer>
   );
 }
@@ -249,8 +245,5 @@ const styles = StyleSheet.create({
   },
   pendingButton: {
     marginTop: 8,
-  },
-  logoutButton: {
-    marginTop: 32,
   },
 });
