@@ -36,7 +36,9 @@ router.post('/', requireAuth, async (req, res) => {
     const jobResult = await pool.query('SELECT id FROM jobs WHERE id = $1', [job_id]);
     if (!jobResult.rows.length) return res.status(404).json({ error: 'Job not found' });
 
-    if (!(await assertJobAccess(pool, job_id, req.user.userId, req.user.roles.includes('admin')))) {
+    const roleResult = await pool.query(`SELECT 1 FROM user_roles WHERE user_id = $1 AND role = 'admin' LIMIT 1`, [req.user.userId]);
+    const isAdmin = roleResult.rows.length > 0;
+    if (!(await assertJobAccess(pool, job_id, req.user.userId, isAdmin))) {
       return res.status(403).json({ error: 'You are not authorized for this job' });
     }
 
@@ -102,6 +104,13 @@ router.put('/sync', requireAuth, async (req, res) => {
   }
   if (!VALID_STATES.includes(state)) return res.status(400).json({ error: `state must be one of: ${VALID_STATES.join(', ')}` });
 
+  const started = new Date(started_at);
+  const ended = ended_at ? new Date(ended_at) : null;
+  const now = Date.now();
+  if (Number.isNaN(started.getTime()) || (ended && Number.isNaN(ended.getTime()))) return res.status(400).json({ error: 'Invalid timestamp' });
+  if (started.getTime() > now + 5 * 60 * 1000) return res.status(400).json({ error: 'Segment cannot start in the future' });
+  if (ended && (ended < started || ended.getTime() > now + 5 * 60 * 1000)) return res.status(400).json({ error: 'Invalid segment end time' });
+
   try {
     const parent = await pool.query(
       'SELECT id FROM time_entries WHERE user_id = $1 AND client_id = $2',
@@ -115,10 +124,10 @@ router.put('/sync', requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO job_segments
-       (time_entry_id, job_id, user_id, client_id, state, started_at, ended_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (time_entry_id, job_id, user_id, client_id, state, started_at, ended_at, synced_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
        ON CONFLICT (user_id, client_id) DO UPDATE
-       SET state = EXCLUDED.state, started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at
+       SET state = EXCLUDED.state, started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at, synced_at = now()
        RETURNING id, client_id, job_id, state, started_at, ended_at`,
       [parent.rows[0].id, job_id, req.user.userId, client_id, state, started_at, ended_at || null]
     );
