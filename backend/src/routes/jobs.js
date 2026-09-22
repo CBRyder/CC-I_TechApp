@@ -6,7 +6,12 @@ const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const admin = req.user.roles.includes('admin');
+    const roleResult = await pool.query(
+      `SELECT COALESCE(array_agg(role ORDER BY role), '{}') AS roles
+       FROM user_roles WHERE user_id = $1`,
+      [req.user.userId]
+    );
+    const admin = roleResult.rows[0].roles.includes('admin');
     const result = await pool.query(
       admin
         ? `SELECT id, job_number, name, address, customer_name, status FROM jobs WHERE status = 'open' ORDER BY job_number`
