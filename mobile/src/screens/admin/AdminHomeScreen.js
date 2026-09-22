@@ -36,8 +36,7 @@ export default function AdminHomeScreen({ navigation }) {
       >
         Completed Jobs
       </Button>
-
-      <SectionHeader>Account</SectionHeader>
+          
       <Button
         variant="text"
         onPress={logout}
