@@ -14,6 +14,7 @@ const STATE_LABELS = {
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
+  const isShopTech = user?.tech_type === 'shop';
   const { timeEntry, activeSegment, assignedJobs, isClockedIn, clockIn, clockOut, transitionState, finishJob } =
     useTracking();
   const { getPendingCompletions } = useTracking();
@@ -148,7 +149,7 @@ export default function HomeScreen({ navigation }) {
             )}
             {activeSegment.state === 'work' && (
               <Button mode="outlined" onPress={() => transitionState('pause')} style={styles.cardButton}>
-                Pause
+                {isShopTech ? 'Done for Today' : 'Pause'}
               </Button>
             )}
             {activeSegment.state === 'pause' && (
@@ -157,7 +158,7 @@ export default function HomeScreen({ navigation }) {
               </Button>
             )}
             <Button mode="contained" onPress={handleFinish} style={styles.cardButton}>
-              Finish Job
+              {isShopTech ? 'Complete' : 'Finish Job'}
             </Button>
           </Card.Content>
         </Card>
