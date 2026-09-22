@@ -136,8 +136,11 @@ const styles = StyleSheet.create({
   quickLoginLabel: {
     opacity: 0.7,
     marginBottom: spacing.sm,
+    textAlign: 'center',
   },
   avatarRow: {
+    flexGrow: 1,
+    justifyContent: 'center',
     gap: spacing.md,
     paddingBottom: spacing.xs,
   },
