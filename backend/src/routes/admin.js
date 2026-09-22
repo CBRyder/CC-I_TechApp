@@ -415,7 +415,7 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
          ) AS visit_code
        FROM job_assignments ja
        JOIN jobs j ON j.id = ja.job_id
-       JOIN users u ON u.id = ja.user_id
+       LEFT JOIN users u ON u.id = ja.user_id
        WHERE ja.id = $1`,
       [assignmentId]
     );
@@ -430,23 +430,29 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
     // has no travel segment), but harmless either way.
     const arrivedResult = await pool.query(
       `SELECT started_at FROM job_segments
-       WHERE job_id = $1 AND user_id = $2 AND started_at::date = $3 AND state = 'work'
+       WHERE job_id = $1
+         AND (user_id = $2 OR ($2::integer IS NULL AND employee_display_name = $4))
+         AND started_at::date = $3 AND state = 'work'
        ORDER BY started_at ASC LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const arrivedAt = arrivedResult.rows[0]?.started_at || null;
 
     const hasSegmentResult = await pool.query(
       `SELECT 1 FROM job_segments
-       WHERE job_id = $1 AND user_id = $2 AND started_at::date = $3 LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+       WHERE job_id = $1
+         AND (user_id = $2 OR ($2::integer IS NULL AND employee_display_name = $4))
+         AND started_at::date = $3 LIMIT 1`,
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const hasSegment = hasSegmentResult.rows.length > 0;
 
     const hasTravelResult = await pool.query(
       `SELECT 1 FROM job_segments
-       WHERE job_id = $1 AND user_id = $2 AND started_at::date = $3 AND state = 'travel' LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+       WHERE job_id = $1
+         AND (user_id = $2 OR ($2::integer IS NULL AND employee_display_name = $4))
+         AND started_at::date = $3 AND state = 'travel' LIMIT 1`,
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const hasTravelSegment = hasTravelResult.rows.length > 0;
 
@@ -454,10 +460,12 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
       `SELECT jc.id, jc.visit_summary, jc.submitted_at, jc.po_number
        FROM job_completions jc
        JOIN job_segments js ON js.id = jc.job_segment_id
-       WHERE js.job_id = $1 AND js.user_id = $2 AND js.started_at::date = $3
+       WHERE js.job_id = $1
+         AND (js.user_id = $2 OR ($2::integer IS NULL AND js.employee_display_name = $4))
+         AND js.started_at::date = $3
          AND jc.submitted_at IS NOT NULL
        ORDER BY jc.submitted_at DESC LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const completion = completionResult.rows[0] || null;
     // Mirrors actsAsShopSql above (JS instead of SQL — no need for a whole
