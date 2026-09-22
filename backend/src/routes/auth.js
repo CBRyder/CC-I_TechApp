@@ -193,6 +193,7 @@ router.post('/login', async (req, res) => {
   try {
     const client = await pool.connect();
     try {
+      await client.query(`DELETE FROM auth_login_attempts WHERE attempted_at < now() - interval '30 days'`);
       const blocked = await loginRateLimited(client, identifierHash, ipAddress, deviceHash);
       if (blocked) {
         await recordLoginAttempt(client, identifierHash, ipAddress, deviceHash, false);
