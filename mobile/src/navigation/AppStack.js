@@ -10,6 +10,7 @@ import SwitchAccountScreen from '../screens/SwitchAccountScreen';
 import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
 import ComponentGalleryScreen from '../screens/dev/ComponentGalleryScreen';
+import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -21,6 +22,7 @@ export default function AppStack() {
   // has no way to reach this screen, not even by guessing the route name.
   const { user } = useAuth();
   const isDev = user?.roles?.includes('dev');
+  const isAdmin = user?.roles?.includes('admin');
 
   return (
     <Stack.Navigator>
@@ -57,6 +59,13 @@ export default function AppStack() {
         options={{ title: 'Parts Used' }}
       />
       <Stack.Screen name="PartsList" component={PartsListScreen} options={{ title: 'Select Part' }} />
+      {isAdmin && (
+        <Stack.Screen
+          name="AdminUsers"
+          component={AdminUsersScreen}
+          options={{ title: 'Users & Roles' }}
+        />
+      )}
       {isDev && (
         <Stack.Screen
           name="ComponentGallery"

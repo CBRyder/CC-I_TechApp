@@ -131,4 +131,19 @@ export function confirmCompletionPhoto(payload, accessToken) {
   return request('/job-completions/photos/confirm', { method: 'PUT', body: payload, accessToken });
 }
 
+// --- admin ---
+
+export function listAdminUsers(accessToken) {
+  return request('/admin/users', { accessToken });
+}
+
+// roles: full replacement set, e.g. ['tech', 'admin'].
+export function updateUserRoles(userId, roles, accessToken) {
+  return request(`/admin/users/${userId}/roles`, {
+    method: 'PUT',
+    body: { roles },
+    accessToken,
+  });
+}
+
 export { ApiError };

@@ -67,16 +67,72 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
   }
 });
 
-// For the assignment picker — who a job can be assigned to.
+// For the assignment picker (who a job can be assigned to) and the admin
+// user/role management screen — includes every role each user holds.
 router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, username, email, role FROM users WHERE status = 'active' ORDER BY full_name`
+      `SELECT u.id, u.full_name, u.username, u.email,
+              COALESCE(array_agg(ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
+       FROM users u
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       WHERE u.status = 'active'
+       GROUP BY u.id
+       ORDER BY u.full_name`
     );
     res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+const VALID_ROLES = ['tech', 'admin'];
+
+// Replaces a user's full role set in one call (checkboxes on the admin
+// screen, not incremental grant/revoke calls) — e.g. { roles: ['tech',
+// 'admin'] } for someone who's both. Roles are never self-service (see
+// auth.js's register comment); this is the one place they're actually
+// granted, gated on the caller already holding 'admin'.
+router.put('/users/:userId/roles', requireAuth, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.userId);
+  const { roles } = req.body;
+
+  if (!Array.isArray(roles) || roles.length === 0) {
+    return res.status(400).json({ error: 'roles must be a non-empty array' });
+  }
+  const invalid = roles.filter((r) => !VALID_ROLES.includes(r));
+  if (invalid.length > 0) {
+    return res.status(400).json({ error: `Invalid role(s): ${invalid.join(', ')}` });
+  }
+  // Can't demote yourself out of admin — avoids locking everyone (including
+  // yourself) out with no admin left to undo it. A different admin can still
+  // remove this one's admin role.
+  if (userId === req.user.userId && !roles.includes('admin')) {
+    return res.status(400).json({ error: 'You cannot remove your own admin role' });
+  }
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    await pool.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+    for (const role of new Set(roles)) {
+      await pool.query(
+        'INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [userId, role]
+      );
+    }
+
+    const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
+      userId,
+    ]);
+    res.json({ userId, roles: rolesResult.rows.map((r) => r.role) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update roles' });
   }
 });
 
