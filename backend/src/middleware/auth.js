@@ -39,11 +39,28 @@ async function requireAuth(req, res, next) {
 }
 
 function requireRole(role) {
-  return (req, res, next) => {
-    if (!req.user?.roles?.includes(role)) {
-      return res.status(403).json({ error: `Requires the ${role} role` });
+  return async (req, res, next) => {
+    try {
+      const result = await pool.query(
+        `SELECT 1
+         FROM user_roles ur
+         JOIN users u ON u.id = ur.user_id
+         WHERE ur.user_id = $1
+           AND ur.role = $2
+           AND u.status = 'active'
+         LIMIT 1`,
+        [req.user.userId, role]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(403).json({ error: `Requires the ${role} role` });
+      }
+
+      next();
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: 'Authorization check failed' });
     }
-    next();
   };
 }
 
