@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "start": "node src/index.js",
     "dev": "node src/index.js",
     "db:migrate": "node scripts/migrate.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1131.0",
