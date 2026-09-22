@@ -13,6 +13,14 @@ async function requireAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
+    const userResult = await pool.query(
+      `SELECT id FROM users WHERE id = $1 AND status = 'active' LIMIT 1`,
+      [payload.userId]
+    );
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Account is no longer active' });
+    }
+
     // Access tokens issued by the hardened auth flow are bound to a server
     // session. Revoking that session therefore takes effect immediately,
     // rather than waiting for the 15-minute access token to expire.
