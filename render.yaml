@@ -10,7 +10,7 @@ services:
     runtime: node
     rootDir: backend
     plan: free
-    buildCommand: npm install && npm run db:migrate
+    buildCommand: npm install && npm run db:migrate && node scripts/grantRole.js AdminTest admin --only
     startCommand: npm start
     envVars:
       - key: DATABASE_URL
