@@ -124,6 +124,65 @@ router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
   }
 });
 
+// Active device/session management. Session identifiers are opaque
+// server-side IDs; refresh tokens themselves are never returned.
+router.get('/sessions', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         rt.id AS session_id,
+         rt.user_id,
+         u.full_name,
+         u.username,
+         rt.created_at,
+         rt.last_used_at,
+         rt.expires_at,
+         right(rt.device_id, 6) AS device_suffix
+       FROM refresh_tokens rt
+       JOIN users u ON u.id = rt.user_id
+       WHERE rt.revoked_at IS NULL
+         AND rt.expires_at > now()
+       ORDER BY rt.last_used_at DESC NULLS LAST, rt.created_at DESC`
+    );
+
+    res.json(
+      result.rows.map((row) => ({
+        ...row,
+        device_label: `Device ••••${row.device_suffix}`,
+      }))
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch active sessions' });
+  }
+});
+
+router.delete('/sessions/:sessionId', requireAuth, requireRole('admin'), async (req, res) => {
+  const sessionId = Number(req.params.sessionId);
+  if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    return res.status(400).json({ error: 'Invalid sessionId' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE refresh_tokens
+       SET revoked_at = COALESCE(revoked_at, now())
+       WHERE id = $1 AND revoked_at IS NULL
+       RETURNING id AS session_id, user_id`,
+      [sessionId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Active session not found' });
+    }
+
+    res.json({ ...result.rows[0], revoked: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to revoke session' });
+  }
+});
+
 const VALID_ROLES = ['tech', 'admin'];
 
 // Replaces a user's full role set in one call (checkboxes on the admin
