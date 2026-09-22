@@ -103,7 +103,7 @@ router.put('/parts/sync', requireAuth, async (req, res) => {
 // uploads the JPEG directly to R2 (never through this server), then calls
 // /photos/confirm once that upload actually succeeds.
 router.post('/photos/presign', requireAuth, async (req, res) => {
-  const { client_id, job_completion_client_id, kind } = req.body;
+  const { client_id, job_completion_client_id, kind, content_type = 'image/jpeg', byte_size, sha256 } = req.body;
 
   if (!client_id || !job_completion_client_id || !['before', 'after'].includes(kind)) {
     return res.status(400).json({
@@ -125,13 +125,19 @@ router.post('/photos/presign', requireAuth, async (req, res) => {
     const jobCompletionId = completionResult.rows[0].id;
     const r2Key = `completions/${jobCompletionId}/${kind}/${client_id}.jpg`;
 
-    const uploadUrl = await getPresignedUploadUrl(r2Key);
+    if (content_type !== 'image/jpeg') return res.status(400).json({ error: 'Only JPEG uploads are accepted' });
+    if (byte_size != null && (!Number.isInteger(byte_size) || byte_size <= 0 || byte_size > 15 * 1024 * 1024)) {
+      return res.status(400).json({ error: 'Photo exceeds the 15 MB limit' });
+    }
+    if (sha256 != null && !/^[a-f0-9]{64}$/i.test(sha256)) return res.status(400).json({ error: 'Invalid sha256' });
+
+    const uploadUrl = await getPresignedUploadUrl(r2Key, content_type);
 
     await pool.query(
-      `INSERT INTO job_completion_photos (job_completion_id, kind, r2_key, client_id, user_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (user_id, client_id) DO UPDATE SET r2_key = EXCLUDED.r2_key`,
-      [jobCompletionId, kind, r2Key, client_id, req.user.userId]
+      `INSERT INTO job_completion_photos (job_completion_id, kind, r2_key, client_id, user_id, content_type, byte_size, sha256)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (user_id, client_id) DO UPDATE SET r2_key = EXCLUDED.r2_key, content_type = EXCLUDED.content_type, byte_size = EXCLUDED.byte_size, sha256 = EXCLUDED.sha256`,
+      [jobCompletionId, kind, r2Key, client_id, req.user.userId, content_type, byte_size || null, sha256 || null]
     );
 
     res.json({ uploadUrl, r2Key });
