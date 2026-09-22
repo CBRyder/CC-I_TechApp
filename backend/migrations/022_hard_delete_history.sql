@@ -5,6 +5,7 @@
 
 ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS employee_display_name TEXT;
 ALTER TABLE job_segments ADD COLUMN IF NOT EXISTS employee_display_name TEXT;
+ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS employee_display_name TEXT;
 ALTER TABLE job_completions ADD COLUMN IF NOT EXISTS employee_display_name TEXT;
 ALTER TABLE job_completion_parts ADD COLUMN IF NOT EXISTS employee_display_name TEXT;
 ALTER TABLE job_completion_photos ADD COLUMN IF NOT EXISTS employee_display_name TEXT;
