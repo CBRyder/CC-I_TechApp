@@ -15,7 +15,7 @@ import { Text, TouchableRipple, useTheme } from 'react-native-paper';
 
 const STATE_LEGEND = [
   { state: 'at_shop', description: "Created, sitting at the shop — a shop tech hasn't started it yet." },
-  { state: 'incoming', description: "Created, not yet started — a road tech hasn't headed out yet." },
+  { state: 'ready', description: "Created, not yet started — a road tech hasn't headed out yet." },
   { state: 'in_progress', description: 'Work has started and is ongoing (including any on-site pause).' },
   { state: 'shop_return', description: 'A shop tech finished their part — ready to be picked up.' },
   { state: 'completed', description: 'Finished by a road tech.' },
@@ -24,7 +24,7 @@ const STATE_LEGEND = [
 // Every job, across all 5 statuses — the admin oversight view. Status is
 // purely derived (see backend/src/routes/admin.js): a shop tech and a road
 // tech doing the exact same actions (start work, tap Finish) show up under
-// different labels here (At the Shop/Shop Return vs Incoming/Completed).
+// different labels here (At the Shop/Shop Return vs Ready/Completed).
 export default function AdminVisitsScreen({ navigation }) {
   const { accessToken } = useAuth();
   const theme = useTheme();

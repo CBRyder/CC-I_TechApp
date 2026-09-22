@@ -8,16 +8,19 @@ const router = express.Router();
 // happened — and it's labeled off the ASSIGNED TECH'S tech_types (sticky,
 // admin-set array — see migration 013; a tech can be both), not anything
 // stored on the job itself:
-//   - no segment logged yet:                    at_shop / incoming
+//   - no segment logged yet:                    at_shop / ready
 //   - a segment exists, no submitted completion:  in_progress (either)
 //   - a submitted completion exists:             shop_return / completed
+// ("Incoming" is reserved for a future status — something physically
+// inbound to the shop, not yet arrived — distinct from "ready," which is
+// a road job that just hasn't been headed out to yet.)
 // A shop tech's "Shop Return" and a road tech's "Completed" are the exact
 // same underlying event (the tech tapped Finish) — only the admin-facing
 // label differs. For a tech who's exclusively one type, that's a fixed
 // answer; for a tech who's both, this visit's own data decides: it's
 // treated as shop-style unless it actually has a travel segment (the
 // concrete signal that they went "on the road" for it specifically).
-const VALID_STATUSES = ['at_shop', 'incoming', 'in_progress', 'shop_return', 'completed'];
+const VALID_STATUSES = ['at_shop', 'ready', 'in_progress', 'shop_return', 'completed'];
 
 function actsAsShopSql(techTypesCol, hasTravelCol) {
   return `(CASE
@@ -79,7 +82,7 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
               CASE
                 WHEN is_completed THEN CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'shop_return' ELSE 'completed' END
                 WHEN has_segment THEN 'in_progress'
-                ELSE CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'at_shop' ELSE 'incoming' END
+                ELSE CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'at_shop' ELSE 'ready' END
               END AS status
        FROM visits
        WHERE ($1::text IS NULL OR job_number ILIKE '%' || $1 || '%' OR visit_code ILIKE '%' || $1 || '%')
@@ -308,7 +311,7 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
       ? actsAsShop ? 'shop_return' : 'completed'
       : hasSegment
       ? 'in_progress'
-      : actsAsShop ? 'at_shop' : 'incoming';
+      : actsAsShop ? 'at_shop' : 'ready';
 
     let parts = [];
     if (completion) {

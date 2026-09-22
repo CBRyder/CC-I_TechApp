@@ -151,7 +151,7 @@ export function deleteUser(userId, accessToken) {
   return request(`/admin/users/${userId}`, { method: 'DELETE', accessToken });
 }
 
-// status: 'at_shop' | 'incoming' | 'in_progress' | 'shop_return' |
+// status: 'at_shop' | 'ready' | 'in_progress' | 'shop_return' |
 // 'completed', omit for all. q: free-text search against job number /
 // visit code.
 export function listAdminVisits({ status, q } = {}, accessToken) {

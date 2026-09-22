@@ -9,7 +9,7 @@ const LABELS = {
   pending: 'Pending',
   synced: 'Synced',
   at_shop: 'At the Shop',
-  incoming: 'Incoming',
+  ready: 'Ready',
   in_progress: 'In Progress',
   shop_return: 'Shop Return',
   completed: 'Completed',

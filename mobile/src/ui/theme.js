@@ -39,10 +39,10 @@ export const stateColors = {
   pending: '#E14B3D',
   synced: '#3FA34D',
   // Admin visit statuses (see backend/src/routes/admin.js) — at_shop and
-  // incoming share a color (both mean "not started"), same for
+  // ready share a color (both mean "not started"), same for
   // shop_return/completed (both mean "done", the label is what differs).
   at_shop: '#9CA3AF',
-  incoming: '#9CA3AF',
+  ready: '#9CA3AF',
   in_progress: '#FF6A1A',
   shop_return: '#3FA34D',
   completed: '#3FA34D',
