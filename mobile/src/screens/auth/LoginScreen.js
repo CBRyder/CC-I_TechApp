@@ -87,37 +87,39 @@ export default function LoginScreen({ navigation }) {
       )}
 
       <View style={styles.form}>
-        <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.primary }]}>
-          CC-I Tech App
-        </Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Sign in to continue
-        </Text>
+        <View style={styles.formContent}>
+          <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.primary }]}>
+            CC-I Tech App
+          </Text>
+          <Text variant="bodyMedium" style={styles.subtitle}>
+            Sign in to continue
+          </Text>
 
-        <TextField
-          label="Username or Email"
-          value={identifier}
-          onChangeText={setIdentifier}
-          autoCapitalize="none"
-        />
-        <TextField
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+          <TextField
+            label="Username or Email"
+            value={identifier}
+            onChangeText={setIdentifier}
+            autoCapitalize="none"
+          />
+          <TextField
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
 
-        {error ? (
-          <Text style={[styles.error, { color: theme.colors.error }]}>{error}</Text>
-        ) : null}
+          {error ? (
+            <Text style={[styles.error, { color: theme.colors.error }]}>{error}</Text>
+          ) : null}
 
-        <Button onPress={handleLogin} loading={submitting} disabled={submitting} style={styles.submitButton}>
-          Log In
-        </Button>
+          <Button onPress={handleLogin} loading={submitting} disabled={submitting} style={styles.submitButton}>
+            Log In
+          </Button>
 
-        <Button variant="text" onPress={() => navigation.navigate('Register')} style={styles.linkButton}>
-          Need an account? Register
-        </Button>
+          <Button variant="text" onPress={() => navigation.navigate('Register')} style={styles.linkButton}>
+            Need an account? Register
+          </Button>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -156,7 +158,12 @@ const styles = StyleSheet.create({
   form: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
+  },
+  formContent: {
+    width: '100%',
+    maxWidth: 400,
   },
   title: {
     textAlign: 'center',
