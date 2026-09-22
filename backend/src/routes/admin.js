@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
@@ -176,6 +177,7 @@ router.delete('/sessions/:sessionId', requireAuth, requireRole('admin'), async (
       return res.status(404).json({ error: 'Active session not found' });
     }
 
+    await audit({ actorUserId: req.user.userId, targetUserId: result.rows[0].user_id, action: 'session_revoked_by_admin', resourceType: 'session', resourceId: sessionId, ipAddress: req.ip });
     res.json({ ...result.rows[0], revoked: true });
   } catch (err) {
     console.error(err);
@@ -225,6 +227,7 @@ router.put('/users/:userId/roles', requireAuth, requireRole('admin'), async (req
     const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
       userId,
     ]);
+    await audit({ actorUserId: req.user.userId, targetUserId: userId, action: 'user_roles_changed', resourceType: 'user', resourceId: userId, ipAddress: req.ip, metadata: { roles: rolesResult.rows.map((r) => r.role) } });
     res.json({ userId, roles: rolesResult.rows.map((r) => r.role) });
   } catch (err) {
     console.error(err);
@@ -330,6 +333,7 @@ router.delete('/users/:userId', requireAuth, requireRole('admin'), async (req, r
     await client.query('DELETE FROM users WHERE id = $1', [userId]);
     await client.query('COMMIT');
 
+    await audit({ actorUserId: req.user.userId, targetUserId: userId, action: 'user_deleted', resourceType: 'user', resourceId: userId, ipAddress: req.ip, metadata: { historical_name: displayName } });
     res.json({ userId, status: 'deleted', historical_name: displayName });
   } catch (err) {
     try {
