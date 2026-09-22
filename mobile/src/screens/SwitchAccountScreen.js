@@ -14,8 +14,8 @@ export default function SwitchAccountScreen({ navigation }) {
   // it conditionally registers screens (Home only for tech, AdminHome only
   // for admin-only) based on `user`, and setUser() inside switchAccount
   // hasn't necessarily been reflected in AppStack's tree yet at that point
-  // in the same tick, so `navigate('Home')` can target a screen that isn't
-  // registered yet. Instead, record the target and navigate from an effect
+  // in the same tick, so acting on it too early can target a screen that
+  // isn't registered yet. Instead, record the target and act from an effect
   // keyed on `user` — effects run after the commit, so by the time this
   // fires, AppStack has already re-rendered with the right screens.
   const pendingLandingRef = useRef(null);
@@ -23,7 +23,17 @@ export default function SwitchAccountScreen({ navigation }) {
   useEffect(() => {
     if (pendingLandingRef.current !== null && user?.id === pendingLandingRef.current) {
       pendingLandingRef.current = null;
-      navigation.navigate(user.roles?.includes('tech') ? 'Home' : 'AdminHome');
+      // reset(), not navigate() — navigate() only collapses back to an
+      // existing screen if one's already on THIS stack; switching accounts
+      // (especially across tech <-> admin-only, whose screen sets differ
+      // entirely) usually means it isn't, so it'd get pushed on top instead,
+      // leaving the previous account's screens reachable via the back
+      // button underneath. reset() wipes the whole history and starts over
+      // with just the landing screen, every time, regardless of role.
+      navigation.reset({
+        index: 0,
+        routes: [{ name: user.roles?.includes('tech') ? 'Home' : 'AdminHome' }],
+      });
     }
   }, [user, navigation]);
 
