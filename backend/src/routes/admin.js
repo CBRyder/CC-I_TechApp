@@ -207,36 +207,79 @@ router.put('/users/:userId/tech-types', requireAuth, requireRole('admin'), async
   }
 });
 
-// Soft-delete — sets status='inactive' rather than a real DELETE, since
-// users are referenced all over (time_entries, job_segments, job_assignments,
-// etc.) and a hard delete would either fail on the FK or silently orphan
-// history. Also revokes every refresh token so it can't keep using any
-// already-remembered session, and drops it from user_roles (status='active'
-// is what everything already gates on, but this keeps roles from lingering
-// on a deactivated account).
+// Hard-delete the account while preserving historical business records.
+// Historical rows retain only First Name + Last Initial; personal account data,
+// roles, preferences, and refresh-token sessions are deleted with the user.
 router.delete('/users/:userId', requireAuth, requireRole('admin'), async (req, res) => {
   const userId = Number(req.params.userId);
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
   if (userId === req.user.userId) {
     return res.status(400).json({ error: 'You cannot delete your own account' });
   }
 
+  const client = await pool.connect();
   try {
-    const userResult = await pool.query(
-      `UPDATE users SET status = 'inactive' WHERE id = $1 AND status = 'active' RETURNING id`,
+    await client.query('BEGIN');
+
+    const userResult = await client.query(
+      'SELECT id, full_name, tech_types FROM users WHERE id = $1 FOR UPDATE',
       [userId]
     );
-    if (userResult.rows.length === 0) {
+    const user = userResult.rows[0];
+    if (!user) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'User not found' });
     }
 
-    await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
-    await pool.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+    const parts = user.full_name.trim().split(/\\s+/);
+    const displayName =
+      parts.length > 1
+        ? `${parts[0]} ${parts[parts.length - 1].slice(-1).toUpperCase()}.`
+        : parts[0];
 
-    res.json({ userId, status: 'inactive' });
+    // Capture the minimum identity needed for business history before the
+    // users row is removed. No email, username, phone, or password survives.
+    const historyTables = [
+      'time_entries',
+      'job_segments',
+      'timesheets',
+      'job_completions',
+      'job_completion_parts',
+      'job_completion_photos',
+    ];
+
+    for (const table of historyTables) {
+      await client.query(
+        `UPDATE ${table}
+         SET employee_display_name = $1
+         WHERE user_id = $2`,
+        [displayName, userId]
+      );
+    }
+
+    await client.query(
+      `UPDATE job_assignments
+       SET employee_display_name = $1,
+           employee_tech_types = $2
+       WHERE user_id = $3`,
+      [displayName, user.tech_types || null, userId]
+    );
+
+    await client.query('DELETE FROM users WHERE id = $1', [userId]);
+    await client.query('COMMIT');
+
+    res.json({ userId, status: 'deleted', historical_name: displayName });
   } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
     console.error(err);
     res.status(500).json({ error: 'Failed to delete user' });
+  } finally {
+    client.release();
   }
 });
 
