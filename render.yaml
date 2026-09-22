@@ -10,7 +10,7 @@ services:
     runtime: node
     rootDir: backend
     plan: free
-    buildCommand: npm install && npm run db:migrate
+    buildCommand: npm install && npm run db:migrate && node scripts/resetWorkHistory.js && node scripts/deriveJobLocationNames.js
     startCommand: npm start
     envVars:
       - key: DATABASE_URL
