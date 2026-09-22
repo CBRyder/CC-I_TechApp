@@ -1,7 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const requireAuth = require('../middleware/auth');
-const { getPresignedUploadUrl } = require('../r2');
+const { getPresignedUploadUrl, getPresignedDownloadUrl } = require('../r2');
 
 const router = express.Router();
 
@@ -138,6 +138,44 @@ router.post('/photos/presign', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to create upload URL' });
+  }
+});
+
+router.get('/photos/:photoId/url', requireAuth, async (req, res) => {
+  const photoId = Number(req.params.photoId);
+  if (!Number.isInteger(photoId) || photoId <= 0) {
+    return res.status(400).json({ error: 'Invalid photoId' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.r2_key, p.user_id, jc.job_segment_id
+       FROM job_completion_photos p
+       JOIN job_completions jc ON jc.id = p.job_completion_id
+       JOIN job_segments js ON js.id = jc.job_segment_id
+       WHERE p.id = $1
+         AND (
+           p.user_id = $2
+           OR EXISTS (
+             SELECT 1 FROM user_roles ur
+             WHERE ur.user_id = $2 AND ur.role = 'admin'
+           )
+           OR EXISTS (
+             SELECT 1 FROM job_assignments ja
+             WHERE ja.job_id = js.job_id AND ja.user_id = $2
+           )
+         )`,
+      [photoId, req.user.userId]
+    );
+
+    const photo = result.rows[0];
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+    const url = await getPresignedDownloadUrl(photo.r2_key);
+    res.json({ url, expiresIn: 300 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to authorize photo access' });
   }
 });
 
