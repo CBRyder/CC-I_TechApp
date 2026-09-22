@@ -130,6 +130,26 @@ router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
 
 // Active device/session management. Session identifiers are opaque
 // server-side IDs; refresh tokens themselves are never returned.
+router.get('/audit', requireAuth, requireRole('admin'), async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const action = typeof req.query.action === 'string' ? req.query.action.trim() : null;
+  try {
+    const result = await pool.query(
+      `SELECT id, actor_user_id, actor_display_name, action, target_user_id,
+              resource_type, resource_id, ip_address, metadata, created_at
+       FROM audit_events
+       WHERE ($1::text IS NULL OR action = $1)
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [action || null, limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch audit events' });
+  }
+});
+
 router.get('/sessions', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query(
