@@ -14,7 +14,10 @@ const STATE_LABELS = {
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
-  const isShopTech = user?.tech_type === 'shop';
+  // Only for a tech who's exclusively shop — a tech who's both sees the
+  // regular road-style labels (Pause/Finish Job); the underlying action is
+  // identical either way, this only changes wording.
+  const isShopTech = user?.tech_types?.length === 1 && user.tech_types[0] === 'shop';
   const { timeEntry, activeSegment, assignedJobs, isClockedIn, clockIn, clockOut, transitionState, finishJob } =
     useTracking();
   const { getPendingCompletions } = useTracking();

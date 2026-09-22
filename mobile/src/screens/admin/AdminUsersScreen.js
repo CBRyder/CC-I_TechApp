@@ -3,15 +3,30 @@ import { View, Alert, ActivityIndicator } from 'react-native';
 import { Text, Chip, IconButton, useTheme } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/client';
-import { ScreenContainer, SectionHeader, EmptyState, spacing, radius } from '../../ui';
+import { ScreenContainer, SectionHeader, EmptyState, SegmentedTabs, spacing, radius } from '../../ui';
 
 const ALL_ROLES = ['tech', 'admin'];
+
+// 3-way toggle, not two independent checkboxes — a tech can be both, but
+// picking a position is clearer UX than two chips that both happen to be on.
+const TECH_TYPE_SEGMENTS = ['Shop', 'Both', 'Road'];
+
+function techTypesToSegment(techTypes) {
+  if (techTypes.length === 2) return 'Both';
+  return techTypes[0] === 'shop' ? 'Shop' : 'Road';
+}
+
+function segmentToTechTypes(segment) {
+  if (segment === 'Both') return ['shop', 'road'];
+  return segment === 'Shop' ? ['shop'] : ['road'];
+}
 
 export default function AdminUsersScreen() {
   const { user, accessToken } = useAuth();
   const theme = useTheme();
   const [users, setUsers] = useState(null); // null while loading, [] once loaded
   const [savingUserId, setSavingUserId] = useState(null);
+  const [savingTechTypeId, setSavingTechTypeId] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [error, setError] = useState(null);
 
@@ -48,6 +63,23 @@ export default function AdminUsersScreen() {
       Alert.alert("Couldn't update roles", err.message);
     } finally {
       setSavingUserId(null);
+    }
+  };
+
+  const changeTechType = async (target, segment) => {
+    const nextTechTypes = segmentToTechTypes(segment);
+    const previousUsers = users;
+    setUsers((current) =>
+      current.map((u) => (u.id === target.id ? { ...u, tech_types: nextTechTypes } : u))
+    );
+    setSavingTechTypeId(target.id);
+    try {
+      await api.updateUserTechTypes(target.id, nextTechTypes, accessToken);
+    } catch (err) {
+      setUsers(previousUsers);
+      Alert.alert("Couldn't update tech type", err.message);
+    } finally {
+      setSavingTechTypeId(null);
     }
   };
 
@@ -134,6 +166,18 @@ export default function AdminUsersScreen() {
                 ))}
                 {savingUserId === target.id && <ActivityIndicator size="small" />}
               </View>
+              {target.roles.includes('tech') && (
+                <View style={{ marginTop: spacing.sm, maxWidth: 260 }}>
+                  <SegmentedTabs
+                    options={TECH_TYPE_SEGMENTS}
+                    value={techTypesToSegment(target.tech_types)}
+                    onChange={(segment) => changeTechType(target, segment)}
+                  />
+                  {savingTechTypeId === target.id && (
+                    <ActivityIndicator size="small" style={{ marginTop: spacing.xs }} />
+                  )}
+                </View>
+              )}
             </View>
             {target.id === user?.id ? (
               // Can't delete your own account — no button at all here,

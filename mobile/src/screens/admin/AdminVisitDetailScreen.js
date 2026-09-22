@@ -3,20 +3,26 @@ import { View } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/client';
-import { ScreenContainer, SectionHeader, EmptyState, Button, TextField, spacing } from '../../ui';
+import { ScreenContainer, SectionHeader, EmptyState, Button, TextField, StatusPill, spacing } from '../../ui';
 
-// Admin's read-mostly view of a completed visit — everything the tech
-// recorded (notes, parts) plus the one thing only an admin sets: the PO
-// number for billing.
+// Admin's read-mostly view of a visit — everything the tech recorded
+// (notes, parts, arrival time) plus the things only an admin sets: the
+// umbrella/location names and the PO number for billing.
 export default function AdminVisitDetailScreen({ route }) {
   const { assignmentId } = route.params;
   const { accessToken } = useAuth();
 
   const [visit, setVisit] = useState(null);
   const [error, setError] = useState(null);
+
   const [poNumber, setPoNumber] = useState('');
   const [savingPO, setSavingPO] = useState(false);
   const [poSaved, setPoSaved] = useState(false);
+
+  const [umbrellaName, setUmbrellaName] = useState('');
+  const [locationName, setLocationName] = useState('');
+  const [savingJob, setSavingJob] = useState(false);
+  const [jobSaved, setJobSaved] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -24,6 +30,8 @@ export default function AdminVisitDetailScreen({ route }) {
       const data = await api.getAdminVisit(assignmentId, accessToken);
       setVisit(data);
       setPoNumber(data.completion?.po_number || '');
+      setUmbrellaName(data.customer_name || '');
+      setLocationName(data.location_name || '');
     } catch (err) {
       setError(err.message);
     }
@@ -47,6 +55,24 @@ export default function AdminVisitDetailScreen({ route }) {
     }
   };
 
+  const saveJobInfo = async () => {
+    setSavingJob(true);
+    setJobSaved(false);
+    try {
+      const updated = await api.updateJob(
+        visit.job_id,
+        { customer_name: umbrellaName.trim(), location_name: locationName.trim() },
+        accessToken
+      );
+      setVisit((current) => ({ ...current, ...updated }));
+      setJobSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingJob(false);
+    }
+  };
+
   if (error) {
     return (
       <ScreenContainer>
@@ -65,13 +91,31 @@ export default function AdminVisitDetailScreen({ route }) {
 
   return (
     <ScreenContainer>
-      <Text variant="titleLarge">{visit.job_name}</Text>
-      <Text variant="bodyMedium" style={{ opacity: 0.7 }}>
-        {visit.visit_code} · {visit.customer_name || visit.address}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Text variant="titleLarge" style={{ flex: 1 }}>
+          {visit.job_name}
+        </Text>
+        <StatusPill state={visit.status} />
+      </View>
+      <Text variant="bodyMedium" style={{ opacity: 0.7, marginTop: spacing.xs }}>
+        {visit.visit_code} · {visit.address}
       </Text>
       <Text variant="bodySmall" style={{ opacity: 0.7, marginTop: spacing.xs }}>
-        {visit.assigned_to} · {new Date(visit.assigned_date).toLocaleDateString()}
+        {visit.assigned_to} ({visit.tech_types.join(' & ')} tech) · {new Date(visit.assigned_date).toLocaleDateString()}
       </Text>
+      {visit.arrived_at && (
+        <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+          Arrived {new Date(visit.arrived_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+        </Text>
+      )}
+
+      <SectionHeader>Umbrella &amp; Location</SectionHeader>
+      <TextField label="Umbrella Name" value={umbrellaName} onChangeText={setUmbrellaName} placeholder="e.g. Waste Management" />
+      <TextField label="Location Name" value={locationName} onChangeText={setLocationName} placeholder="e.g. Walmart" />
+      <Button onPress={saveJobInfo} loading={savingJob} disabled={savingJob}>
+        Save
+      </Button>
+      {jobSaved && <Text style={{ marginTop: spacing.sm, opacity: 0.7 }}>Saved.</Text>}
 
       <SectionHeader>Purchase Order</SectionHeader>
       {visit.completion ? (

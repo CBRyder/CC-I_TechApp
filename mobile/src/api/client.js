@@ -151,8 +151,9 @@ export function deleteUser(userId, accessToken) {
   return request(`/admin/users/${userId}`, { method: 'DELETE', accessToken });
 }
 
-// status: 'incoming' | 'in_progress' | 'completed'. q: free-text search
-// against job number / visit code.
+// status: 'at_shop' | 'incoming' | 'in_progress' | 'shop_return' |
+// 'completed', omit for all. q: free-text search against job number /
+// visit code.
 export function listAdminVisits({ status, q } = {}, accessToken) {
   const params = new URLSearchParams();
   if (status) params.set('status', status);
@@ -163,6 +164,25 @@ export function listAdminVisits({ status, q } = {}, accessToken) {
 
 export function getAdminVisit(assignmentId, accessToken) {
   return request(`/admin/visits/${assignmentId}`, { accessToken });
+}
+
+// Umbrella (customer_name) and/or location_name — either can be omitted to
+// leave it unchanged.
+export function updateJob(jobId, { customer_name, location_name }, accessToken) {
+  return request(`/admin/jobs/${jobId}`, {
+    method: 'PUT',
+    body: { customer_name, location_name },
+    accessToken,
+  });
+}
+
+// techTypes: non-empty array from ['shop', 'road'] — a tech can be both.
+export function updateUserTechTypes(userId, techTypes, accessToken) {
+  return request(`/admin/users/${userId}/tech-types`, {
+    method: 'PUT',
+    body: { tech_types: techTypes },
+    accessToken,
+  });
 }
 
 export function setCompletionPO(completionId, poNumber, accessToken) {

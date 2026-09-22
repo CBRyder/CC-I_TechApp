@@ -38,6 +38,14 @@ export const stateColors = {
   pause: '#C8DA3F',
   pending: '#E14B3D',
   synced: '#3FA34D',
+  // Admin visit statuses (see backend/src/routes/admin.js) — at_shop and
+  // incoming share a color (both mean "not started"), same for
+  // shop_return/completed (both mean "done", the label is what differs).
+  at_shop: '#9CA3AF',
+  incoming: '#9CA3AF',
+  in_progress: '#FF6A1A',
+  shop_return: '#3FA34D',
+  completed: '#3FA34D',
 };
 
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };

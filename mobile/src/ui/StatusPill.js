@@ -8,6 +8,11 @@ const LABELS = {
   pause: 'Paused',
   pending: 'Pending',
   synced: 'Synced',
+  at_shop: 'At the Shop',
+  incoming: 'Incoming',
+  in_progress: 'In Progress',
+  shop_return: 'Shop Return',
+  completed: 'Completed',
 };
 
 // state: any key in stateColors (theme.js) — add more there as this app's

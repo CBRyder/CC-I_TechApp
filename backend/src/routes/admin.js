@@ -5,15 +5,27 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const router = express.Router();
 
 // Status is derived, not stored, so it can never drift from what actually
-// happened — and it's labeled off the ASSIGNED TECH'S tech_type (sticky,
-// admin-set — see migration 012), not anything stored on the job itself:
-//   - no segment logged yet:      at_shop (shop tech)   / incoming (road tech)
-//   - a segment exists, no submitted completion:         in_progress (either)
-//   - a submitted completion exists:  shop_return (shop tech) / completed (road tech)
+// happened — and it's labeled off the ASSIGNED TECH'S tech_types (sticky,
+// admin-set array — see migration 013; a tech can be both), not anything
+// stored on the job itself:
+//   - no segment logged yet:                    at_shop / incoming
+//   - a segment exists, no submitted completion:  in_progress (either)
+//   - a submitted completion exists:             shop_return / completed
 // A shop tech's "Shop Return" and a road tech's "Completed" are the exact
 // same underlying event (the tech tapped Finish) — only the admin-facing
-// label differs, based on who did it.
+// label differs. For a tech who's exclusively one type, that's a fixed
+// answer; for a tech who's both, this visit's own data decides: it's
+// treated as shop-style unless it actually has a travel segment (the
+// concrete signal that they went "on the road" for it specifically).
 const VALID_STATUSES = ['at_shop', 'incoming', 'in_progress', 'shop_return', 'completed'];
+
+function actsAsShopSql(techTypesCol, hasTravelCol) {
+  return `(CASE
+    WHEN ${techTypesCol} = ARRAY['shop']::text[] THEN true
+    WHEN ${techTypesCol} = ARRAY['road']::text[] THEN false
+    ELSE NOT ${hasTravelCol}
+  END)`;
+}
 
 router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
   const { status, q } = req.query;
@@ -37,7 +49,7 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
            j.location_name,
            j.total_visits,
            u.full_name AS assigned_to,
-           u.tech_type,
+           u.tech_types,
            (j.job_number || '-V' || ja.visit_number::text ||
              CASE WHEN j.total_visits IS NOT NULL THEN '-' || j.total_visits::text ELSE '' END
            ) AS visit_code,
@@ -52,17 +64,22 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
              SELECT 1 FROM job_segments js
              WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
                AND js.started_at::date = ja.assigned_date
-           ) AS has_segment
+           ) AS has_segment,
+           EXISTS (
+             SELECT 1 FROM job_segments js
+             WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
+               AND js.started_at::date = ja.assigned_date AND js.state = 'travel'
+           ) AS has_travel_segment
          FROM job_assignments ja
          JOIN jobs j ON j.id = ja.job_id
          JOIN users u ON u.id = ja.user_id
        )
        SELECT assignment_id, job_id, user_id, assigned_date, visit_number, job_number, job_name,
-              address, customer_name, location_name, total_visits, assigned_to, tech_type, visit_code,
+              address, customer_name, location_name, total_visits, assigned_to, tech_types, visit_code,
               CASE
-                WHEN is_completed THEN CASE WHEN tech_type = 'shop' THEN 'shop_return' ELSE 'completed' END
+                WHEN is_completed THEN CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'shop_return' ELSE 'completed' END
                 WHEN has_segment THEN 'in_progress'
-                ELSE CASE WHEN tech_type = 'shop' THEN 'at_shop' ELSE 'incoming' END
+                ELSE CASE WHEN ${actsAsShopSql('tech_types', 'has_travel_segment')} THEN 'at_shop' ELSE 'incoming' END
               END AS status
        FROM visits
        WHERE ($1::text IS NULL OR job_number ILIKE '%' || $1 || '%' OR visit_code ILIKE '%' || $1 || '%')
@@ -82,7 +99,7 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
 router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.full_name, u.username, u.email, u.tech_type,
+      `SELECT u.id, u.full_name, u.username, u.email, u.tech_types,
               COALESCE(array_agg(ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
        FROM users u
        LEFT JOIN user_roles ur ON ur.user_id = u.id
@@ -148,22 +165,27 @@ router.put('/users/:userId/roles', requireAuth, requireRole('admin'), async (req
 
 const VALID_TECH_TYPES = ['shop', 'road'];
 
-// Sticky classification (see migration 012) that decides which visit
-// status labels a tech's work shows up under for the admin — 'shop' gets
-// At the Shop / Shop Return, 'road' gets Incoming / Completed. Admin-set,
-// same as roles — not something a tech toggles themselves.
-router.put('/users/:userId/tech-type', requireAuth, requireRole('admin'), async (req, res) => {
+// Sticky classification (see migration 013) that decides which visit
+// status labels a tech's work shows up under for the admin — see the
+// comment on actsAsShopSql above for how a tech who's both gets resolved
+// per-visit. Full replacement (3-way toggle on the admin screen: Shop /
+// Both / Road), same pattern as roles — admin-set, not self-service.
+router.put('/users/:userId/tech-types', requireAuth, requireRole('admin'), async (req, res) => {
   const userId = Number(req.params.userId);
-  const { tech_type } = req.body;
+  const { tech_types } = req.body;
 
-  if (!VALID_TECH_TYPES.includes(tech_type)) {
-    return res.status(400).json({ error: `tech_type must be one of: ${VALID_TECH_TYPES.join(', ')}` });
+  if (!Array.isArray(tech_types) || tech_types.length === 0) {
+    return res.status(400).json({ error: 'tech_types must be a non-empty array' });
+  }
+  const invalid = tech_types.filter((t) => !VALID_TECH_TYPES.includes(t));
+  if (invalid.length > 0) {
+    return res.status(400).json({ error: `Invalid tech_type(s): ${invalid.join(', ')}` });
   }
 
   try {
     const result = await pool.query(
-      `UPDATE users SET tech_type = $1 WHERE id = $2 RETURNING id, tech_type`,
-      [tech_type, userId]
+      `UPDATE users SET tech_types = $1 WHERE id = $2 RETURNING id, tech_types`,
+      [Array.from(new Set(tech_types)), userId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -171,7 +193,7 @@ router.put('/users/:userId/tech-type', requireAuth, requireRole('admin'), async 
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to update tech type' });
+    res.status(500).json({ error: 'Failed to update tech types' });
   }
 });
 
@@ -222,7 +244,7 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
       `SELECT
          ja.id AS assignment_id, ja.job_id, ja.user_id, ja.assigned_date, ja.visit_number,
          j.job_number, j.name AS job_name, j.address, j.customer_name, j.location_name, j.total_visits,
-         u.full_name AS assigned_to, u.tech_type,
+         u.full_name AS assigned_to, u.tech_types,
          (j.job_number || '-V' || ja.visit_number::text ||
            CASE WHEN j.total_visits IS NOT NULL THEN '-' || j.total_visits::text ELSE '' END
          ) AS visit_code
@@ -256,6 +278,13 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
     );
     const hasSegment = hasSegmentResult.rows.length > 0;
 
+    const hasTravelResult = await pool.query(
+      `SELECT 1 FROM job_segments
+       WHERE job_id = $1 AND user_id = $2 AND started_at::date = $3 AND state = 'travel' LIMIT 1`,
+      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+    );
+    const hasTravelSegment = hasTravelResult.rows.length > 0;
+
     const completionResult = await pool.query(
       `SELECT jc.id, jc.visit_summary, jc.submitted_at, jc.po_number
        FROM job_completions jc
@@ -266,12 +295,20 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
       [assignment.job_id, assignment.user_id, assignment.assigned_date]
     );
     const completion = completionResult.rows[0] || null;
-    const isShop = assignment.tech_type === 'shop';
+    // Mirrors actsAsShopSql above (JS instead of SQL — no need for a whole
+    // extra query round-trip just to reuse that logic here).
+    const techTypes = assignment.tech_types;
+    const actsAsShop =
+      techTypes.length === 1 && techTypes[0] === 'shop'
+        ? true
+        : techTypes.length === 1 && techTypes[0] === 'road'
+        ? false
+        : !hasTravelSegment;
     const status = completion
-      ? isShop ? 'shop_return' : 'completed'
+      ? actsAsShop ? 'shop_return' : 'completed'
       : hasSegment
       ? 'in_progress'
-      : isShop ? 'at_shop' : 'incoming';
+      : actsAsShop ? 'at_shop' : 'incoming';
 
     let parts = [];
     if (completion) {
