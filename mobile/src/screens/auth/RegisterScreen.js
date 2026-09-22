@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { Text, TextInput, Button, HelperText } from 'react-native-paper';
+import { Text, useTheme } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
+import { Button, TextField, spacing } from '../../ui';
 
 export default function RegisterScreen({ navigation }) {
+  const theme = useTheme();
   const { register, error } = useAuth();
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
@@ -28,54 +30,40 @@ export default function RegisterScreen({ navigation }) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.form}>
-        <Text variant="headlineMedium" style={styles.title}>
+        <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.primary }]}>
           Create Account
         </Text>
 
-        <TextInput label="Full Name" value={fullName} onChangeText={setFullName} style={styles.input} />
-        <TextInput
-          label="Username"
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-        <TextInput
+        <TextField label="Full Name" value={fullName} onChangeText={setFullName} />
+        <TextField label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" />
+        <TextField
           label="Email (optional)"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          style={styles.input}
         />
-        <TextInput
+        <TextField
           label="Phone (optional)"
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
-          style={styles.input}
         />
-        <TextInput
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-        />
+        <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry />
 
-        <HelperText type="error" visible={!!error}>
-          {error}
-        </HelperText>
+        {error ? (
+          <Text style={[styles.error, { color: theme.colors.error }]}>{error}</Text>
+        ) : null}
 
-        <Button mode="contained" onPress={handleRegister} loading={submitting} disabled={submitting}>
+        <Button onPress={handleRegister} loading={submitting} disabled={submitting} style={styles.submitButton}>
           Register
         </Button>
 
-        <Button mode="text" onPress={() => navigation.navigate('Login')} style={styles.linkButton}>
+        <Button variant="text" onPress={() => navigation.navigate('Login')} style={styles.linkButton}>
           Already have an account? Log In
         </Button>
       </ScrollView>
@@ -88,17 +76,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   form: {
-    paddingHorizontal: 24,
-    paddingTop: 48,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xl,
   },
   title: {
     textAlign: 'center',
-    marginBottom: 24,
+    fontWeight: '700',
+    marginBottom: spacing.lg,
   },
-  input: {
-    marginBottom: 12,
+  error: {
+    fontSize: 13,
+    marginBottom: spacing.sm,
+  },
+  submitButton: {
+    marginTop: spacing.xs,
   },
   linkButton: {
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
 });
