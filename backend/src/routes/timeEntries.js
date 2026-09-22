@@ -109,12 +109,13 @@ router.put('/sync', requireAuth, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO time_entries (user_id, client_id, clock_in_at, clock_out_at)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO time_entries (user_id, client_id, clock_in_at, clock_out_at, synced_at)
+       VALUES ($1, $2, $3, $4, now())
        ON CONFLICT (user_id, client_id) DO UPDATE
          SET clock_in_at = EXCLUDED.clock_in_at,
-             clock_out_at = EXCLUDED.clock_out_at
-       RETURNING id, client_id, clock_in_at, clock_out_at`,
+             clock_out_at = EXCLUDED.clock_out_at,
+             synced_at = now()
+       RETURNING id, client_id, clock_in_at, clock_out_at, synced_at`,
       [req.user.userId, client_id, clock_in_at, clock_out_at || null]
     );
     res.json(result.rows[0]);
