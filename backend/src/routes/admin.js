@@ -52,31 +52,34 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
            j.customer_name,
            j.location_name,
            j.total_visits,
-           u.full_name AS assigned_to,
-           u.tech_types,
+           COALESCE(u.full_name, ja.employee_display_name) AS assigned_to,
+           COALESCE(u.tech_types, ja.employee_tech_types) AS tech_types,
            (j.job_number || '-V' || ja.visit_number::text ||
              CASE WHEN j.total_visits IS NOT NULL THEN '-' || j.total_visits::text ELSE '' END
            ) AS visit_code,
            EXISTS (
              SELECT 1 FROM job_completions jc
              JOIN job_segments js ON js.id = jc.job_segment_id
-             WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
+             WHERE js.job_id = ja.job_id
+               AND (js.user_id = ja.user_id OR (ja.user_id IS NULL AND js.employee_display_name = ja.employee_display_name))
                AND js.started_at::date = ja.assigned_date
                AND jc.submitted_at IS NOT NULL
            ) AS is_completed,
            EXISTS (
              SELECT 1 FROM job_segments js
-             WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
+             WHERE js.job_id = ja.job_id
+               AND (js.user_id = ja.user_id OR (ja.user_id IS NULL AND js.employee_display_name = ja.employee_display_name))
                AND js.started_at::date = ja.assigned_date
            ) AS has_segment,
            EXISTS (
              SELECT 1 FROM job_segments js
-             WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
+             WHERE js.job_id = ja.job_id
+               AND (js.user_id = ja.user_id OR (ja.user_id IS NULL AND js.employee_display_name = ja.employee_display_name))
                AND js.started_at::date = ja.assigned_date AND js.state = 'travel'
            ) AS has_travel_segment
          FROM job_assignments ja
          JOIN jobs j ON j.id = ja.job_id
-         JOIN users u ON u.id = ja.user_id
+         LEFT JOIN users u ON u.id = ja.user_id
        )
        SELECT assignment_id, job_id, user_id, assigned_date, visit_number, job_number, job_name,
               address, customer_name, location_name, total_visits, assigned_to, tech_types, visit_code,
@@ -405,7 +408,8 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
       `SELECT
          ja.id AS assignment_id, ja.job_id, ja.user_id, ja.assigned_date, ja.visit_number,
          j.job_number, j.name AS job_name, j.address, j.customer_name, j.location_name, j.total_visits,
-         u.full_name AS assigned_to, u.tech_types,
+         COALESCE(u.full_name, ja.employee_display_name) AS assigned_to,
+         COALESCE(u.tech_types, ja.employee_tech_types) AS tech_types,
          (j.job_number || '-V' || ja.visit_number::text ||
            CASE WHEN j.total_visits IS NOT NULL THEN '-' || j.total_visits::text ELSE '' END
          ) AS visit_code
