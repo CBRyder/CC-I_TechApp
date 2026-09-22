@@ -46,12 +46,13 @@ router.put('/sync', requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO job_completions (job_segment_id, user_id, client_id, visit_summary, submitted_at)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO job_completions (job_segment_id, user_id, client_id, visit_summary, submitted_at, synced_at)
+       VALUES ($1, $2, $3, $4, $5, now())
        ON CONFLICT (user_id, client_id) DO UPDATE
          SET visit_summary = EXCLUDED.visit_summary,
-             submitted_at = EXCLUDED.submitted_at
-       RETURNING id, client_id, job_segment_id, visit_summary, submitted_at`,
+             submitted_at = EXCLUDED.submitted_at,
+             synced_at = now()
+       RETURNING id, client_id, job_segment_id, visit_summary, submitted_at, synced_at`,
       [jobSegmentId, req.user.userId, client_id, visit_summary || null, submitted_at || null]
     );
     res.json(result.rows[0]);
@@ -85,10 +86,10 @@ router.put('/parts/sync', requireAuth, async (req, res) => {
     const jobCompletionId = completionResult.rows[0].id;
 
     const result = await pool.query(
-      `INSERT INTO job_completion_parts (job_completion_id, part_id, quantity, client_id, user_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (user_id, client_id) DO UPDATE SET quantity = EXCLUDED.quantity
-       RETURNING id, client_id, part_id, quantity`,
+      `INSERT INTO job_completion_parts (job_completion_id, part_id, quantity, client_id, user_id, synced_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (user_id, client_id) DO UPDATE SET quantity = EXCLUDED.quantity, synced_at = now()
+       RETURNING id, client_id, part_id, quantity, synced_at`,
       [jobCompletionId, part_id, quantity || 1, client_id, req.user.userId]
     );
     res.json(result.rows[0]);
@@ -146,7 +147,7 @@ router.put('/photos/confirm', requireAuth, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `UPDATE job_completion_photos SET uploaded_at = now()
+      `UPDATE job_completion_photos SET uploaded_at = now(), synced_at = now()
        WHERE user_id = $1 AND client_id = $2
        RETURNING id, client_id, kind, uploaded_at`,
       [req.user.userId, client_id]
