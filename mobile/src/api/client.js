@@ -58,10 +58,10 @@ export function refresh(refreshToken, deviceId) {
   });
 }
 
-export function logout(refreshToken) {
+export function logout(refreshToken, deviceId) {
   return request('/auth/logout', {
     method: 'POST',
-    body: { refreshToken },
+    body: { refreshToken, deviceId },
   });
 }
 
