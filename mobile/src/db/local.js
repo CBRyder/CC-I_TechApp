@@ -1,12 +1,21 @@
 import * as SQLite from 'expo-sqlite';
 
-let dbPromise = null;
+// Every read/write in this file awaits this instead of opening the database
+// directly. TrackingContext and SettingsContext both touch local data from
+// their own independent mount effects — nothing sequences one before the
+// other — so whichever fires first pays for opening the connection AND
+// bringing the schema fully up to date (CREATE TABLE, column migrations,
+// legacy backfill); every other caller, on either context, just awaits the
+// same promise and gets the already-ready connection. Without this, one
+// could race ahead and query a column (e.g. user_id) before the other's
+// migration added it.
+let dbReadyPromise = null;
 
 function getDb() {
-  if (!dbPromise) {
-    dbPromise = SQLite.openDatabaseAsync('tracking.db');
+  if (!dbReadyPromise) {
+    dbReadyPromise = setupDb();
   }
-  return dbPromise;
+  return dbReadyPromise;
 }
 
 // expo-sqlite can't handle two withTransactionAsync calls overlapping on
@@ -27,12 +36,17 @@ async function runTransaction(fn) {
   return result;
 }
 
-// Creates the local schema if it doesn't exist yet. Safe to call every app
-// launch. This local DB is the real-time source of truth for clock/job
-// state on this device — the backend is a durable copy it syncs to when
-// there's signal, not something the UI waits on.
-export async function initDb() {
-  const db = await getDb();
+// Opens the connection and brings the schema fully up to date — called
+// exactly once (memoized by getDb() above), by whichever caller touches
+// the database first. This local DB is the real-time source of truth for
+// clock/job state on this device — the backend is a durable copy it syncs
+// to when there's signal, not something the UI waits on.
+//
+// Also exported as initDb() for TrackingContext to call explicitly first
+// (clearer intent, though every function in this file would wait on the
+// same setup regardless via getDb()).
+async function setupDb() {
+  const db = await SQLite.openDatabaseAsync('tracking.db');
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
 
@@ -143,7 +157,18 @@ export async function initDb() {
   await ensureColumn(db, 'assigned_jobs_cache', 'user_id', 'INTEGER');
   await ensureColumn(db, 'preferences_cache', 'user_id', 'INTEGER');
 
-  await backfillLegacyRows();
+  // Operates on `db` directly rather than through getDb()/runTransaction()
+  // — both would deadlock here, since they await the very setup this
+  // function is still in the middle of.
+  await backfillLegacyRows(db);
+
+  return db;
+}
+
+// Exported for TrackingContext to call explicitly first — see setupDb's
+// comment above.
+export async function initDb() {
+  await getDb();
 }
 
 async function ensureColumn(db, table, column, type) {
@@ -162,12 +187,14 @@ async function ensureColumn(db, table, column, type) {
 // once, then delete the key so this becomes a no-op forever after.
 const LEGACY_CURRENT_USER_KEY = 'current_user_id';
 
-async function backfillLegacyRows() {
-  const legacyOwner = await getAppSetting(LEGACY_CURRENT_USER_KEY);
-  if (legacyOwner === null) return; // fresh install, or already migrated
+async function backfillLegacyRows(db) {
+  const legacyOwner = await db.getFirstAsync(`SELECT value FROM app_settings WHERE key = ?`, [
+    LEGACY_CURRENT_USER_KEY,
+  ]);
+  if (!legacyOwner) return; // fresh install, or already migrated
 
-  const ownerId = Number(legacyOwner);
-  await runTransaction(async (db) => {
+  const ownerId = Number(legacyOwner.value);
+  await db.withTransactionAsync(async () => {
     await db.runAsync(`UPDATE time_entries SET user_id = ? WHERE user_id IS NULL`, [ownerId]);
     await db.runAsync(`UPDATE job_segments SET user_id = ? WHERE user_id IS NULL`, [ownerId]);
     await db.runAsync(`UPDATE job_completions SET user_id = ? WHERE user_id IS NULL`, [ownerId]);
