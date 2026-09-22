@@ -100,16 +100,16 @@ export function TrackingProvider({ children }) {
     })();
   }, [refreshLocalState]);
 
-  // Once logged in: make sure this device's local data actually belongs to
-  // this account (wiping it first if a different account used this device
-  // last — see ensureLocalDataForUser's comment), THEN pull fresh jobs/
+  // Once logged in: point the local DB at this account (see local.js's
+  // per-account isolation comment — each account has its own slice of the
+  // tracking tables, nothing gets wiped on switch), THEN pull fresh jobs/
   // parts lists and flush anything queued locally from a previous offline
-  // session. The ordering matters — refreshing local state before the
-  // ownership check would briefly show the previous account's data.
+  // session. The ordering matters — refreshing local state before setting
+  // the active account would read under the previous account's scope.
   useEffect(() => {
     if (!isReady || !isAuthenticated || !user) return;
     (async () => {
-      await local.ensureLocalDataForUser(user.id);
+      await local.setActiveUser(user.id);
       await refreshLocalState();
       // Sequenced, not fired concurrently — each of these opens its own
       // SQLite transaction on the same connection, and expo-sqlite can't

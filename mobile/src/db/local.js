@@ -39,6 +39,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS time_entries (
       client_id TEXT PRIMARY KEY NOT NULL,
       server_id INTEGER,
+      user_id INTEGER,
       clock_in_at TEXT NOT NULL,
       clock_out_at TEXT,
       synced INTEGER NOT NULL DEFAULT 0
@@ -47,6 +48,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS job_segments (
       client_id TEXT PRIMARY KEY NOT NULL,
       server_id INTEGER,
+      user_id INTEGER,
       time_entry_client_id TEXT NOT NULL,
       job_id INTEGER NOT NULL,
       state TEXT NOT NULL,
@@ -71,10 +73,11 @@ export async function initDb() {
       unit TEXT NOT NULL
     );
 
-    -- Always holds just the most recently fetched assigned-jobs list (one
-    -- date at a time — Home only ever needs "today").
+    -- Always holds just the most recently fetched assigned-jobs list per
+    -- account (one date at a time — Home only ever needs "today").
     CREATE TABLE IF NOT EXISTS assigned_jobs_cache (
-      id INTEGER PRIMARY KEY NOT NULL,
+      id INTEGER NOT NULL,
+      user_id INTEGER,
       job_number TEXT NOT NULL,
       name TEXT NOT NULL,
       address TEXT,
@@ -87,6 +90,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS job_completions (
       client_id TEXT PRIMARY KEY NOT NULL,
       server_id INTEGER,
+      user_id INTEGER,
       job_segment_client_id TEXT NOT NULL,
       visit_summary TEXT,
       submitted_at TEXT,
@@ -118,15 +122,63 @@ export async function initDb() {
       value TEXT
     );
 
-    -- Read-through cache of the server's user_preferences, so a synced
-    -- preference (like preferred categories) still applies with no signal.
-    -- Writes go straight to the server (see SettingsContext) — this is only
-    -- refreshed after a successful write or an explicit reload.
+    -- Read-through cache of the server's user_preferences, per account, so
+    -- a synced preference (like preferred categories) still applies with
+    -- no signal. Writes go straight to the server (see SettingsContext) —
+    -- this is only refreshed after a successful write or an explicit reload.
     CREATE TABLE IF NOT EXISTS preferences_cache (
-      key TEXT PRIMARY KEY NOT NULL,
+      key TEXT NOT NULL,
+      user_id INTEGER,
       value TEXT
     );
   `);
+
+  // Existing installs from before per-account scoping: add the new
+  // user_id columns (SQLite can't do this inside CREATE TABLE IF NOT
+  // EXISTS once a table already exists). No-ops on a fresh install, where
+  // the columns above already exist.
+  await ensureColumn(db, 'time_entries', 'user_id', 'INTEGER');
+  await ensureColumn(db, 'job_segments', 'user_id', 'INTEGER');
+  await ensureColumn(db, 'job_completions', 'user_id', 'INTEGER');
+  await ensureColumn(db, 'assigned_jobs_cache', 'user_id', 'INTEGER');
+  await ensureColumn(db, 'preferences_cache', 'user_id', 'INTEGER');
+
+  await backfillLegacyRows();
+}
+
+async function ensureColumn(db, table, column, type) {
+  const columns = await db.getAllAsync(`PRAGMA table_info(${table})`);
+  if (!columns.some((c) => c.name === column)) {
+    await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
+// One-time migration for installs that predate per-account scoping: rows
+// written back then have no user_id (NULL). They can only ever belong to
+// whichever account was active on this device when they were written — the
+// old design wiped every table the moment a different account logged in,
+// so at most one account's data ever existed here at once. That account is
+// exactly what LEGACY_CURRENT_USER_KEY recorded. Backfill NULL rows to it
+// once, then delete the key so this becomes a no-op forever after.
+const LEGACY_CURRENT_USER_KEY = 'current_user_id';
+
+async function backfillLegacyRows() {
+  const legacyOwner = await getAppSetting(LEGACY_CURRENT_USER_KEY);
+  if (legacyOwner === null) return; // fresh install, or already migrated
+
+  const ownerId = Number(legacyOwner);
+  await runTransaction(async (db) => {
+    await db.runAsync(`UPDATE time_entries SET user_id = ? WHERE user_id IS NULL`, [ownerId]);
+    await db.runAsync(`UPDATE job_segments SET user_id = ? WHERE user_id IS NULL`, [ownerId]);
+    await db.runAsync(`UPDATE job_completions SET user_id = ? WHERE user_id IS NULL`, [ownerId]);
+    await db.runAsync(`UPDATE assigned_jobs_cache SET user_id = ? WHERE user_id IS NULL`, [
+      ownerId,
+    ]);
+    await db.runAsync(`UPDATE preferences_cache SET user_id = ? WHERE user_id IS NULL`, [
+      ownerId,
+    ]);
+    await db.runAsync(`DELETE FROM app_settings WHERE key = ?`, [LEGACY_CURRENT_USER_KEY]);
+  });
 }
 
 // --- time entries ---
@@ -134,15 +186,16 @@ export async function initDb() {
 export async function getOpenTimeEntry() {
   const db = await getDb();
   return db.getFirstAsync(
-    `SELECT * FROM time_entries WHERE clock_out_at IS NULL ORDER BY clock_in_at DESC LIMIT 1`
+    `SELECT * FROM time_entries WHERE clock_out_at IS NULL AND user_id = ? ORDER BY clock_in_at DESC LIMIT 1`,
+    [activeUserId]
   );
 }
 
 export async function createTimeEntry(clientId, clockInAt) {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO time_entries (client_id, clock_in_at, synced) VALUES (?, ?, 0)`,
-    [clientId, clockInAt]
+    `INSERT INTO time_entries (client_id, user_id, clock_in_at, synced) VALUES (?, ?, ?, 0)`,
+    [clientId, activeUserId, clockInAt]
   );
 }
 
@@ -162,9 +215,15 @@ export async function markTimeEntrySynced(clientId, serverId) {
   ]);
 }
 
+// Only the active account's own unsynced records — another account's
+// still-queued data (from before it was switched away from) stays put
+// until it's active again; syncing it now would push it with the wrong
+// account's access token.
 export async function getUnsyncedTimeEntries() {
   const db = await getDb();
-  return db.getAllAsync(`SELECT * FROM time_entries WHERE synced = 0`);
+  return db.getAllAsync(`SELECT * FROM time_entries WHERE synced = 0 AND user_id = ?`, [
+    activeUserId,
+  ]);
 }
 
 // --- job segments ---
@@ -184,9 +243,9 @@ export async function getActiveSegment(timeEntryClientId) {
 export async function createSegment(clientId, timeEntryClientId, jobId, state, startedAt) {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO job_segments (client_id, time_entry_client_id, job_id, state, started_at, synced)
-     VALUES (?, ?, ?, ?, ?, 0)`,
-    [clientId, timeEntryClientId, jobId, state, startedAt]
+    `INSERT INTO job_segments (client_id, user_id, time_entry_client_id, job_id, state, started_at, synced)
+     VALUES (?, ?, ?, ?, ?, ?, 0)`,
+    [clientId, activeUserId, timeEntryClientId, jobId, state, startedAt]
   );
 }
 
@@ -207,13 +266,15 @@ export async function markSegmentSynced(clientId, serverId) {
 }
 
 // Only segments whose parent time entry is already synced can sync
-// themselves (the backend needs the parent to exist first).
+// themselves (the backend needs the parent to exist first) — and only the
+// active account's own, for the same reason as getUnsyncedTimeEntries.
 export async function getUnsyncedSegmentsWithSyncedParent() {
   const db = await getDb();
   return db.getAllAsync(
     `SELECT js.* FROM job_segments js
      JOIN time_entries te ON te.client_id = js.time_entry_client_id
-     WHERE js.synced = 0 AND te.synced = 1`
+     WHERE js.synced = 0 AND te.synced = 1 AND js.user_id = ?`,
+    [activeUserId]
   );
 }
 
@@ -237,16 +298,25 @@ export async function getCachedJobs() {
   return db.getAllAsync(`SELECT * FROM jobs_cache WHERE status = 'open' ORDER BY job_number`);
 }
 
-// --- assigned jobs cache ("today's jobs" for Home — one date at a time) ---
+// --- assigned jobs cache ("today's jobs" for Home — one date at a time,
+// per account) ---
 
 export async function replaceAssignedJobsCache(jobs) {
   await runTransaction(async (db) => {
-    await db.runAsync(`DELETE FROM assigned_jobs_cache`);
+    await db.runAsync(`DELETE FROM assigned_jobs_cache WHERE user_id = ?`, [activeUserId]);
     for (const job of jobs) {
       await db.runAsync(
-        `INSERT INTO assigned_jobs_cache (id, job_number, name, address, customer_name, status)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [job.id, job.job_number, job.name, job.address ?? null, job.customer_name ?? null, job.status]
+        `INSERT INTO assigned_jobs_cache (id, user_id, job_number, name, address, customer_name, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          job.id,
+          activeUserId,
+          job.job_number,
+          job.name,
+          job.address ?? null,
+          job.customer_name ?? null,
+          job.status,
+        ]
       );
     }
   });
@@ -254,7 +324,9 @@ export async function replaceAssignedJobsCache(jobs) {
 
 export async function getCachedAssignedJobs() {
   const db = await getDb();
-  return db.getAllAsync(`SELECT * FROM assigned_jobs_cache ORDER BY job_number`);
+  return db.getAllAsync(`SELECT * FROM assigned_jobs_cache WHERE user_id = ? ORDER BY job_number`, [
+    activeUserId,
+  ]);
 }
 
 // --- parts catalog cache (so the parts picker works with no signal) ---
@@ -283,8 +355,8 @@ export async function getCachedParts() {
 export async function createJobCompletion(clientId, jobSegmentClientId) {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO job_completions (client_id, job_segment_client_id, synced) VALUES (?, ?, 0)`,
-    [clientId, jobSegmentClientId]
+    `INSERT INTO job_completions (client_id, user_id, job_segment_client_id, synced) VALUES (?, ?, ?, 0)`,
+    [clientId, activeUserId, jobSegmentClientId]
   );
 }
 
@@ -296,8 +368,9 @@ export async function getPendingCompletions() {
      FROM job_completions jc
      LEFT JOIN job_segments js ON js.client_id = jc.job_segment_client_id
      LEFT JOIN jobs_cache j ON j.id = js.job_id
-     WHERE jc.submitted_at IS NULL
-     ORDER BY js.started_at DESC`
+     WHERE jc.submitted_at IS NULL AND jc.user_id = ?
+     ORDER BY js.started_at DESC`,
+    [activeUserId]
   );
 }
 
@@ -339,7 +412,9 @@ export async function markCompletionSynced(clientId, serverId) {
 
 export async function getUnsyncedCompletions() {
   const db = await getDb();
-  return db.getAllAsync(`SELECT * FROM job_completions WHERE synced = 0`);
+  return db.getAllAsync(`SELECT * FROM job_completions WHERE synced = 0 AND user_id = ?`, [
+    activeUserId,
+  ]);
 }
 
 // --- completion parts (parts used on a job) ---
@@ -377,13 +452,15 @@ export async function markCompletionPartSynced(clientId, serverId) {
   );
 }
 
-// Only parts whose parent completion is already synced can sync themselves.
+// Only parts whose parent completion is already synced (and belongs to the
+// active account) can sync themselves.
 export async function getUnsyncedPartsWithSyncedParent() {
   const db = await getDb();
   return db.getAllAsync(
     `SELECT jcp.* FROM job_completion_parts jcp
      JOIN job_completions jc ON jc.client_id = jcp.job_completion_client_id
-     WHERE jcp.synced = 0 AND jc.synced = 1`
+     WHERE jcp.synced = 0 AND jc.synced = 1 AND jc.user_id = ?`,
+    [activeUserId]
   );
 }
 
@@ -411,13 +488,15 @@ export async function markPhotoUploaded(clientId) {
   await db.runAsync(`UPDATE job_completion_photos SET uploaded = 1 WHERE client_id = ?`, [clientId]);
 }
 
-// Only photos whose parent completion is already synced can upload.
+// Only photos whose parent completion is already synced (and belongs to
+// the active account) can upload.
 export async function getUnuploadedPhotosWithSyncedParent() {
   const db = await getDb();
   return db.getAllAsync(
     `SELECT jcp.* FROM job_completion_photos jcp
      JOIN job_completions jc ON jc.client_id = jcp.job_completion_client_id
-     WHERE jcp.uploaded = 0 AND jc.synced = 1`
+     WHERE jcp.uploaded = 0 AND jc.synced = 1 AND jc.user_id = ?`,
+    [activeUserId]
   );
 }
 
@@ -438,34 +517,56 @@ export async function setAppSetting(key, value) {
   );
 }
 
-// --- synced preferences cache (read-through; writes go to the server) ---
+// --- synced preferences cache (read-through; writes go to the server),
+// per account ---
 
 export async function getCachedPreference(key) {
   const db = await getDb();
-  const row = await db.getFirstAsync(`SELECT value FROM preferences_cache WHERE key = ?`, [key]);
+  const row = await db.getFirstAsync(
+    `SELECT value FROM preferences_cache WHERE key = ? AND user_id = ?`,
+    [key, activeUserId]
+  );
   return row?.value ?? null;
 }
 
 export async function getAllCachedPreferences() {
   const db = await getDb();
-  const rows = await db.getAllAsync(`SELECT key, value FROM preferences_cache`);
+  const rows = await db.getAllAsync(`SELECT key, value FROM preferences_cache WHERE user_id = ?`, [
+    activeUserId,
+  ]);
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 
 export async function setCachedPreference(key, value) {
   const db = await getDb();
-  await db.runAsync(
-    `INSERT INTO preferences_cache (key, value) VALUES (?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    [key, value]
+  const existing = await db.getFirstAsync(
+    `SELECT 1 FROM preferences_cache WHERE key = ? AND user_id = ?`,
+    [key, activeUserId]
   );
+  if (existing) {
+    await db.runAsync(`UPDATE preferences_cache SET value = ? WHERE key = ? AND user_id = ?`, [
+      value,
+      key,
+      activeUserId,
+    ]);
+  } else {
+    await db.runAsync(`INSERT INTO preferences_cache (key, user_id, value) VALUES (?, ?, ?)`, [
+      key,
+      activeUserId,
+      value,
+    ]);
+  }
 }
 
 export async function replacePreferencesCache(preferences) {
   await runTransaction(async (db) => {
-    await db.runAsync(`DELETE FROM preferences_cache`);
+    await db.runAsync(`DELETE FROM preferences_cache WHERE user_id = ?`, [activeUserId]);
     for (const [key, value] of Object.entries(preferences)) {
-      await db.runAsync(`INSERT INTO preferences_cache (key, value) VALUES (?, ?)`, [key, value]);
+      await db.runAsync(`INSERT INTO preferences_cache (key, user_id, value) VALUES (?, ?, ?)`, [
+        key,
+        activeUserId,
+        value,
+      ]);
     }
   });
 }
@@ -481,8 +582,8 @@ export async function getTodaySummary() {
   const todayStartIso = todayStart.toISOString();
 
   const entries = await db.getAllAsync(
-    `SELECT * FROM time_entries WHERE clock_in_at >= ? ORDER BY clock_in_at`,
-    [todayStartIso]
+    `SELECT * FROM time_entries WHERE clock_in_at >= ? AND user_id = ? ORDER BY clock_in_at`,
+    [todayStartIso, activeUserId]
   );
 
   let totalMs = 0;
@@ -503,9 +604,9 @@ export async function getTodaySummary() {
      FROM job_completions jc
      JOIN job_segments js ON js.client_id = jc.job_segment_client_id
      JOIN jobs_cache j ON j.id = js.job_id
-     WHERE jc.submitted_at >= ?
+     WHERE jc.submitted_at >= ? AND jc.user_id = ?
      ORDER BY jc.submitted_at`,
-    [todayStartIso]
+    [todayStartIso, activeUserId]
   );
 
   return { totalHours: totalMs / 3600000, visits };
@@ -517,7 +618,10 @@ export async function getTodaySummary() {
 // getTodaySummary, just across every day instead of just today).
 export async function getHoursHistory() {
   const db = await getDb();
-  const entries = await db.getAllAsync(`SELECT * FROM time_entries ORDER BY clock_in_at`);
+  const entries = await db.getAllAsync(
+    `SELECT * FROM time_entries WHERE user_id = ? ORDER BY clock_in_at`,
+    [activeUserId]
+  );
 
   const byDate = new Map();
   for (const entry of entries) {
@@ -532,54 +636,44 @@ export async function getHoursHistory() {
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
-// Dev-only: wipes local completion records (and their parts/photos) so
-// today's visits list starts clean. Doesn't touch time_entries/job_segments
-// (the actual clock/travel/work history stays) or anything on the backend —
-// this is purely local test-data cleanup, run from the device itself.
+// Dev-only: wipes the active account's local completion records (and their
+// parts/photos) so today's visits list starts clean. Doesn't touch
+// time_entries/job_segments (the actual clock/travel/work history stays),
+// other accounts' data, or anything on the backend — purely local test-data
+// cleanup for whoever's currently logged in, run from the device itself.
 export async function clearCompletedVisits() {
   await runTransaction(async (db) => {
-    await db.runAsync(`DELETE FROM job_completion_photos`);
-    await db.runAsync(`DELETE FROM job_completion_parts`);
-    await db.runAsync(`DELETE FROM job_completions`);
+    await db.runAsync(
+      `DELETE FROM job_completion_photos WHERE job_completion_client_id IN
+       (SELECT client_id FROM job_completions WHERE user_id = ?)`,
+      [activeUserId]
+    );
+    await db.runAsync(
+      `DELETE FROM job_completion_parts WHERE job_completion_client_id IN
+       (SELECT client_id FROM job_completions WHERE user_id = ?)`,
+      [activeUserId]
+    );
+    await db.runAsync(`DELETE FROM job_completions WHERE user_id = ?`, [activeUserId]);
   });
 }
 
 // --- per-account local data isolation ---
 //
-// Every table above is otherwise shared globally on the device, with no
-// user_id column at all — it was built assuming "one tech, one phone,"
-// which holds in real use but breaks the moment a second account logs in
-// on the same device (a new account would just see whatever the previous
-// one left behind: hours, jobs, everything). CURRENT_USER_KEY tracks which
-// account's data is actually sitting in these tables; when a different
-// user logs in, everything gets wiped before that account touches it.
+// time_entries, job_segments, job_completions (+ their parts/photos),
+// assigned_jobs_cache, and preferences_cache all carry a user_id column
+// (see initDb) and every read/write above filters or stamps it using
+// activeUserId. jobs_cache and parts_cache stay unscoped/global — shared
+// catalog data, not personal state, same on every account.
 //
-// This does mean switching back to a previous account on the same device
-// starts that account's local data fresh too (not restored) — the sync
-// engine only ever pushes local -> server, never pulls server -> local, so
-// there's nothing to re-download from. Fine for the real usage pattern
-// (one tech's own phone); a real "restore from server" sync would be a
-// separate feature if multi-account-per-device ever becomes a real case.
-const CURRENT_USER_KEY = 'current_user_id';
+// This means switching accounts on the same device no longer wipes
+// anything: each account just sees its own slice of these tables. Clock
+// in as account A, switch to account B (B starts clean — no entry, no
+// running time), switch back to A and its open time entry/segment/pending
+// completions are exactly where it left them, still running if it was.
+let activeUserId = null;
 
-// Call once per login, before any other local read/write for the session.
-// Wipes local tracking data if a different account was last using this
-// device; no-ops if it's the same account (or the first login ever).
-export async function ensureLocalDataForUser(userId) {
-  const stored = await getAppSetting(CURRENT_USER_KEY);
-  if (stored !== null && Number(stored) === Number(userId)) return;
-
-  await runTransaction(async (db) => {
-    await db.runAsync(`DELETE FROM job_completion_photos`);
-    await db.runAsync(`DELETE FROM job_completion_parts`);
-    await db.runAsync(`DELETE FROM job_completions`);
-    await db.runAsync(`DELETE FROM job_segments`);
-    await db.runAsync(`DELETE FROM time_entries`);
-    await db.runAsync(`DELETE FROM jobs_cache`);
-    await db.runAsync(`DELETE FROM assigned_jobs_cache`);
-    await db.runAsync(`DELETE FROM preferences_cache`);
-    // parts_cache intentionally untouched — shared catalog data, not
-    // scoped to any one account.
-  });
-  await setAppSetting(CURRENT_USER_KEY, String(userId));
+// Call once per login and again on every account switch, before any other
+// local read/write for the session — every scoped query above reads this.
+export async function setActiveUser(userId) {
+  activeUserId = userId;
 }
