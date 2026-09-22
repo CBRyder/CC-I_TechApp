@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 export default function RegisterScreen({ navigation }) {
   const { register, error } = useAuth();
   const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -15,7 +16,8 @@ export default function RegisterScreen({ navigation }) {
     setSubmitting(true);
     await register({
       full_name: fullName.trim(),
-      email: email.trim(),
+      username: username.trim(),
+      email: email.trim() || undefined,
       phone: phone.trim() || undefined,
       password,
     });
@@ -36,7 +38,14 @@ export default function RegisterScreen({ navigation }) {
 
         <TextInput label="Full Name" value={fullName} onChangeText={setFullName} style={styles.input} />
         <TextInput
-          label="Email"
+          label="Username"
+          value={username}
+          onChangeText={setUsername}
+          autoCapitalize="none"
+          style={styles.input}
+        />
+        <TextInput
+          label="Email (optional)"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"

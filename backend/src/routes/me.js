@@ -8,7 +8,7 @@ const router = express.Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, full_name, email, phone, role, status, created_at FROM users WHERE id = $1',
+      'SELECT id, full_name, username, email, phone, role, status, created_at FROM users WHERE id = $1',
       [req.user.userId]
     );
     const user = result.rows[0];
@@ -41,7 +41,7 @@ router.patch('/', requireAuth, async (req, res) => {
          full_name = COALESCE($1, full_name),
          phone = COALESCE($2, phone)
        WHERE id = $3
-       RETURNING id, full_name, email, phone, role, status, created_at`,
+       RETURNING id, full_name, username, email, phone, role, status, created_at`,
       [full_name ?? null, phone ?? null, req.user.userId]
     );
     res.json(result.rows[0]);

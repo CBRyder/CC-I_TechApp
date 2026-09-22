@@ -27,7 +27,7 @@ export default function SwitchAccountScreen({ navigation }) {
           <Button
             key={account.id}
             variant={account.id === user?.id ? 'secondary' : 'outline'}
-            subtitle={account.email}
+            subtitle={account.username}
             loading={switching === account.id}
             onPress={() => handleSwitch(account.id)}
             style={{ marginTop: 8, width: '100%' }}

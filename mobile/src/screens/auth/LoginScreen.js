@@ -5,13 +5,13 @@ import { useAuth } from '../../context/AuthContext';
 
 export default function LoginScreen({ navigation }) {
   const { login, error } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async () => {
     setSubmitting(true);
-    await login(email.trim(), password);
+    await login(identifier.trim(), password);
     setSubmitting(false);
     // On success, AuthContext flips isAuthenticated and RootNavigator swaps
     // to AppStack automatically — nothing to navigate to here.
@@ -31,11 +31,10 @@ export default function LoginScreen({ navigation }) {
         </Text>
 
         <TextInput
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
+          label="Username or Email"
+          value={identifier}
+          onChangeText={setIdentifier}
           autoCapitalize="none"
-          keyboardType="email-address"
           style={styles.input}
         />
         <TextInput

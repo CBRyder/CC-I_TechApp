@@ -1,12 +1,7 @@
-// Base URL for the backend API.
-// - iOS simulator: http://localhost:3000 also works.
-// - Physical device via Expo Go on the SAME Wi-Fi as your PC: your
-//   machine's LAN IP (find with `ipconfig`, look for IPv4 Address), e.g.
-//   'http://192.168.1.153:3000'.
-// - Physical device off that Wi-Fi (cellular, different network): needs a
-//   tunnel — TEMPORARY, dies when the tunnel process stops or this session
-//   ends. Swap back to the LAN IP once you're back on the same Wi-Fi.
-export const API_BASE_URL = 'http://192.168.1.153:3000';
+// Base URL for the backend API — deployed on Render, reachable from
+// anywhere (no LAN/tunnel dependency). Free tier spins down after ~15 min
+// idle, so the first request after a gap can take 30-50s to wake it up.
+export const API_BASE_URL = 'https://cci-techapp-backend.onrender.com';
 
 class ApiError extends Error {
   constructor(message, status, body) {
@@ -40,18 +35,18 @@ async function request(path, { method = 'GET', body, accessToken } = {}) {
 // --- Auth endpoints ---
 
 // Returns the created user (no tokens — call login() after to start a session).
-export function register({ full_name, email, phone, password }) {
+export function register({ full_name, username, email, phone, password }) {
   return request('/auth/register', {
     method: 'POST',
-    body: { full_name, email, phone, password },
+    body: { full_name, username, email, phone, password },
   });
 }
 
-// Returns { accessToken, refreshToken, user }.
-export function login({ email, password }) {
+// identifier: username or email. Returns { accessToken, refreshToken, user }.
+export function login({ identifier, password }) {
   return request('/auth/login', {
     method: 'POST',
-    body: { email, password },
+    body: { identifier, password },
   });
 }
 

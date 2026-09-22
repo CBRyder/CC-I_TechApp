@@ -30,11 +30,11 @@ async function upsertAccount(account) {
 }
 
 // Strips refresh tokens before handing the list to component state — the
-// switcher UI only needs id/email/full_name to render, and there's no
+// switcher UI only needs id/username/full_name to render, and there's no
 // reason for raw tokens to sit in React state when SecureStore already has
 // them.
 function stripTokens(accounts) {
-  return accounts.map(({ id, email, full_name }) => ({ id, email, full_name }));
+  return accounts.map(({ id, username, email, full_name }) => ({ id, username, email, full_name }));
 }
 
 const AuthContext = createContext(null);
@@ -76,15 +76,16 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (identifier, password) => {
     setError(null);
     try {
       const { accessToken: newAccessToken, refreshToken, user: loggedInUser } = await api.login({
-        email,
+        identifier,
         password,
       });
       await upsertAccount({
         id: loggedInUser.id,
+        username: loggedInUser.username,
         email: loggedInUser.email,
         full_name: loggedInUser.full_name,
         refreshToken,
@@ -101,13 +102,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   // Backend register() only creates the account (no tokens), so chain a login
-  // to start the session right after.
+  // to start the session right after. Logs in with username, not email —
+  // email is optional now, username always is.
   const register = useCallback(
-    async ({ full_name, email, phone, password }) => {
+    async ({ full_name, username, email, phone, password }) => {
       setError(null);
       try {
-        await api.register({ full_name, email, phone, password });
-        return login(email, password);
+        await api.register({ full_name, username, email, phone, password });
+        return login(username, password);
       } catch (err) {
         setError(err.message);
         return false;

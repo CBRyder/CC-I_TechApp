@@ -71,7 +71,7 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
 router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, role FROM users WHERE status = 'active' ORDER BY full_name`
+      `SELECT id, full_name, username, email, role FROM users WHERE status = 'active' ORDER BY full_name`
     );
     res.json(result.rows);
   } catch (err) {

@@ -5,20 +5,20 @@ const pool = require('../db');
 const router = express.Router();
 
 router.post('/register', async (req, res) => {
-  const { full_name, email, phone, password } = req.body;
+  const { full_name, username, email, phone, password } = req.body;
 
-  if (!full_name || !email || !password) {
-    return res.status(400).json({ error: 'full_name, email, and password are required' });
+  if (!full_name || !username || !password) {
+    return res.status(400).json({ error: 'full_name, username, and password are required' });
   }
 
   try {
     const password_hash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (full_name, email, phone, password_hash)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, full_name, email, phone, role, status, created_at`,
-      [full_name, email, phone || null, password_hash]
+      `INSERT INTO users (full_name, username, email, phone, password_hash)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, full_name, username, email, phone, role, status, created_at`,
+      [full_name, username, email || null, phone || null, password_hash]
     );
     const user = result.rows[0];
 
@@ -32,7 +32,8 @@ router.post('/register', async (req, res) => {
     res.status(201).json(user);
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'Email already registered' });
+      const field = err.constraint === 'users_username_unique' ? 'Username' : 'Email';
+      return res.status(409).json({ error: `${field} already registered` });
     }
     console.error(err);
     res.status(500).json({ error: 'Registration failed' });
@@ -42,23 +43,26 @@ router.post('/register', async (req, res) => {
 const jwt = require('jsonwebtoken');
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { identifier, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'email and password are required' });
+  if (!identifier || !password) {
+    return res.status(400).json({ error: 'identifier and password are required' });
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const result = await pool.query(
+      'SELECT * FROM users WHERE username = $1 OR email = $1',
+      [identifier]
+    );
     const user = result.rows[0];
 
     if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid username/email or password' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid username/email or password' });
     }
 
     const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
@@ -87,6 +91,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         full_name: user.full_name,
+        username: user.username,
         email: user.email,
         role: user.role,
         roles,
