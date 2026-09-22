@@ -36,7 +36,8 @@ BEGIN
         'job_completion_photos',
         'job_assignments',
         'user_preferences',
-        'user_roles'
+        'user_roles',
+        'refresh_tokens'
       )
   LOOP
     EXECUTE format(
@@ -85,6 +86,10 @@ ALTER TABLE job_assignments
 
 ALTER TABLE user_preferences
   ADD CONSTRAINT user_preferences_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+
+ALTER TABLE refresh_tokens
+  ADD CONSTRAINT refresh_tokens_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE user_roles
