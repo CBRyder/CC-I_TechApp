@@ -235,6 +235,51 @@ router.put('/users/:userId/roles', requireAuth, requireRole('admin'), async (req
   }
 });
 
+router.post('/users/:userId/reset-password', requireAuth, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.userId);
+  const { new_password } = req.body;
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
+  if (typeof new_password !== 'string' || new_password.length < 8) {
+    return res.status(400).json({ error: 'new_password must be at least 8 characters' });
+  }
+
+  try {
+    const bcrypt = require('bcrypt');
+    const passwordHash = await bcrypt.hash(new_password, 10);
+
+    const result = await pool.query(
+      `UPDATE users
+       SET password_hash = $1
+       WHERE id = $2 AND status = 'active'
+       RETURNING id`,
+      [passwordHash, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Per the security policy, an admin reset changes the password but does
+    // not revoke the target user's existing sessions.
+    await audit({
+      actorUserId: req.user.userId,
+      targetUserId: userId,
+      action: 'admin_password_reset',
+      resourceType: 'user',
+      resourceId: userId,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, userId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
 const VALID_TECH_TYPES = ['shop', 'road'];
 
 // Sticky classification (see migration 013) that decides which visit
