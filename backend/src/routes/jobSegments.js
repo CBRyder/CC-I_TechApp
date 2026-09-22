@@ -42,6 +42,16 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
+    const assignmentResult = await pool.query(
+      `SELECT 1 FROM job_assignments
+       WHERE job_id = $1 AND user_id = $2
+       LIMIT 1`,
+      [job_id, req.user.userId]
+    );
+    if (assignmentResult.rows.length === 0) {
+      return res.status(403).json({ error: 'You are not assigned to this job' });
+    }
+
     const result = await pool.query(
       `INSERT INTO job_segments (time_entry_id, job_id, user_id, state, started_at)
        VALUES ($1, $2, $3, $4, now())
@@ -140,6 +150,16 @@ router.put('/sync', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'Parent time entry not synced yet' });
     }
     const timeEntryId = timeEntryResult.rows[0].id;
+
+    const assignmentResult = await pool.query(
+      `SELECT 1 FROM job_assignments
+       WHERE job_id = $1 AND user_id = $2
+       LIMIT 1`,
+      [job_id, req.user.userId]
+    );
+    if (assignmentResult.rows.length === 0) {
+      return res.status(403).json({ error: 'You are not assigned to this job' });
+    }
 
     const result = await pool.query(
       `INSERT INTO job_segments (time_entry_id, job_id, user_id, client_id, state, started_at, ended_at)
