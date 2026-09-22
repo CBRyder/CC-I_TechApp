@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Alert, View } from 'react-native';
 import { IconButton, useTheme } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +8,24 @@ export default function SwitchAccountScreen({ navigation }) {
   const { user, accounts, switchAccount, removeAccount, logout } = useAuth();
   const theme = useTheme();
   const [switching, setSwitching] = useState(null); // id currently switching to, for a loading state
+
+  // Which account id we're waiting to land on post-switch, if any. Navigating
+  // straight after switchAccount() resolves races AppStack's own re-render —
+  // it conditionally registers screens (Home only for tech, AdminHome only
+  // for admin-only) based on `user`, and setUser() inside switchAccount
+  // hasn't necessarily been reflected in AppStack's tree yet at that point
+  // in the same tick, so `navigate('Home')` can target a screen that isn't
+  // registered yet. Instead, record the target and navigate from an effect
+  // keyed on `user` — effects run after the commit, so by the time this
+  // fires, AppStack has already re-rendered with the right screens.
+  const pendingLandingRef = useRef(null);
+
+  useEffect(() => {
+    if (pendingLandingRef.current !== null && user?.id === pendingLandingRef.current) {
+      pendingLandingRef.current = null;
+      navigation.navigate(user.roles?.includes('tech') ? 'Home' : 'AdminHome');
+    }
+  }, [user, navigation]);
 
   const confirmRemove = (account) => {
     Alert.alert(
@@ -24,12 +42,8 @@ export default function SwitchAccountScreen({ navigation }) {
     if (accountId === user?.id) return; // already active
     setSwitching(accountId);
     try {
-      const switchedTo = await switchAccount(accountId);
-      // Not always 'Home' — an admin-only account (no 'tech' role) doesn't
-      // even have that route registered (see AppStack), so it'd fail to
-      // navigate. Route to whichever landing screen actually exists for
-      // whichever account this just became.
-      navigation.navigate(switchedTo.roles?.includes('tech') ? 'Home' : 'AdminHome');
+      await switchAccount(accountId);
+      pendingLandingRef.current = accountId;
     } catch (err) {
       // Most likely cause: this account's remembered refresh token is
       // dead (expired, revoked, or points at a backend/database that no
