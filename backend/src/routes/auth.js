@@ -402,16 +402,20 @@ router.post('/refresh', async (req, res) => {
 });
 
 router.post('/logout', async (req, res) => {
-  const { refreshToken } = req.body;
+  const { refreshToken, deviceId } = req.body;
+  const normalizedDeviceId = normalizeDeviceId(deviceId);
   if (!refreshToken) {
     return res.status(400).json({ error: 'refreshToken is required' });
+  }
+  if (!normalizedDeviceId) {
+    return res.status(400).json({ error: 'deviceId is required' });
   }
 
   try {
     const tokenHash = hashRefreshToken(refreshToken);
     const result = await pool.query(
-      'UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1 RETURNING user_id, id',
-      [tokenHash]
+      'UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1 AND device_id = $2 RETURNING user_id, id',
+      [tokenHash, normalizedDeviceId]
     );
     if (result.rows[0]) {
       await audit({ actorUserId: result.rows[0].user_id, action: 'logout', resourceType: 'session', resourceId: result.rows[0].id, ipAddress: req.ip });
