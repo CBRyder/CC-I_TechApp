@@ -15,9 +15,10 @@ async function audit({
   ipAddress = null,
   metadata = {},
 }) {
-  let actorDisplayName = null;
+  try {
+    let actorDisplayName = null;
 
-  if (actorUserId != null) {
+    if (actorUserId != null) {
     const result = await pool.query('SELECT full_name FROM users WHERE id = $1', [actorUserId]);
     actorDisplayName = result.rows[0] ? displayName(result.rows[0].full_name) : null;
   }
@@ -36,8 +37,13 @@ async function audit({
       resourceId == null ? null : String(resourceId),
       ipAddress || null,
       JSON.stringify(metadata || {}),
-    ]
-  );
+      ]
+    );
+    return true;
+  } catch (err) {
+    console.error('Audit event write failed:', err);
+    return false;
+  }
 }
 
 module.exports = { audit, displayName };
