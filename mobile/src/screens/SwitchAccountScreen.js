@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Alert, View } from 'react-native';
-import { IconButton, useTheme } from 'react-native-paper';
+import { IconButton, Text, useTheme } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 import { ScreenContainer, Button, SectionHeader, EmptyState, spacing } from '../ui';
 
@@ -105,7 +105,12 @@ export default function SwitchAccountScreen({ navigation }) {
         ))
       )}
 
-      <SectionHeader>Add Another Account</SectionHeader>
+      <Text
+        variant="bodySmall"
+        style={{ opacity: 0.6, marginTop: spacing.lg, marginBottom: spacing.xs }}
+      >
+        To add an account, return to the login screen.
+      </Text>
       <Button variant="outline" onPress={logout}>
         Return to Login Screen
       </Button>
