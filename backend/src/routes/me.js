@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const pool = require('../db');
 const requireAuth = require('../middleware/auth');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
@@ -77,6 +78,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
       newHash,
       req.user.userId,
     ]);
+    await audit({ actorUserId: req.user.userId, action: 'password_changed', resourceType: 'user', resourceId: req.user.userId, ipAddress: req.ip });
     res.json({ success: true });
   } catch (err) {
     console.error(err);

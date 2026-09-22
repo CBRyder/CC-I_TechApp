@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import * as api from '../api/client';
+import { uuidv4 } from '../utils/uuid';
 
-// Every account ever logged into on this device is remembered here (its own
-// refresh token, alongside the others) so switching between them is instant
-// — no re-entering a password. ACTIVE_USER_KEY says which one is currently
-// driving the app. logout() only clears the "active" pointer, not the
-// account's entry in ACCOUNTS_KEY — it stays one tap away via
-// switchAccount(). removeAccount() is the only thing that actually forgets
-// one.
 const ACCOUNTS_KEY = 'accounts';
 const ACTIVE_USER_KEY = 'activeUserId';
+const DEVICE_ID_KEY = 'deviceId';
+
+// Refresh-token rotation invalidates the old token immediately. Prevent
+// concurrent app effects from racing the same refresh token and triggering
+// the server's reuse-detection response.
+const refreshFlights = new Map();
 
 async function getAccounts() {
   const raw = await SecureStore.getItemAsync(ACCOUNTS_KEY);
@@ -21,20 +21,42 @@ async function saveAccounts(accounts) {
   await SecureStore.setItemAsync(ACCOUNTS_KEY, JSON.stringify(accounts));
 }
 
+async function getDeviceId() {
+  let deviceId = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = uuidv4();
+    await SecureStore.setItemAsync(DEVICE_ID_KEY, deviceId);
+  }
+  return deviceId;
+}
+
+async function rotateRefreshToken(accountId, refreshToken, deviceId) {
+  const key = String(accountId);
+  const existing = refreshFlights.get(key);
+  if (existing) return existing;
+
+  const promise = api.refresh(refreshToken, deviceId).finally(() => {
+    refreshFlights.delete(key);
+  });
+  refreshFlights.set(key, promise);
+  return promise;
+}
+
 async function upsertAccount(account) {
   const accounts = await getAccounts();
   const idx = accounts.findIndex((a) => a.id === account.id);
-  if (idx >= 0) accounts[idx] = account;
+  if (idx >= 0) accounts[idx] = { ...accounts[idx], ...account };
   else accounts.push(account);
   await saveAccounts(accounts);
 }
 
-// Strips refresh tokens before handing the list to component state — the
-// switcher UI only needs id/username/full_name to render, and there's no
-// reason for raw tokens to sit in React state when SecureStore already has
-// them.
 function stripTokens(accounts) {
-  return accounts.map(({ id, username, email, full_name }) => ({ id, username, email, full_name }));
+  return accounts.map(({ id, username, email, full_name }) => ({
+    id,
+    username,
+    email,
+    full_name,
+  }));
 }
 
 const AuthContext = createContext(null);
@@ -43,11 +65,9 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
   const [accounts, setAccounts] = useState([]);
-  const [isLoading, setIsLoading] = useState(true); // true while we try auto sign-in
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Auto sign-in: load the remembered-accounts list (for the switcher, even
-  // before anything else resolves), then try the active one's refresh token.
   useEffect(() => {
     (async () => {
       try {
@@ -58,17 +78,22 @@ export function AuthProvider({ children }) {
         if (!activeUserId) return;
 
         const account = storedAccounts.find((a) => String(a.id) === activeUserId);
-        if (!account) return;
+        if (!account?.refreshToken) return;
 
-        const { accessToken: newAccessToken } = await api.refresh(account.refreshToken);
-        const me = await api.getMe(newAccessToken);
+        const deviceId = await getDeviceId();
+        const refreshed = await rotateRefreshToken(account.id, account.refreshToken, deviceId);
 
-        setAccessToken(newAccessToken);
+        await upsertAccount({
+          ...account,
+          refreshToken: refreshed.refreshToken,
+        });
+
+        const me = await api.getMe(refreshed.accessToken);
+
+        setAccounts(stripTokens(await getAccounts()));
+        setAccessToken(refreshed.accessToken);
         setUser(me);
       } catch {
-        // Active account's refresh token missing/expired/invalid — fall
-        // through to logged-out state. Other remembered accounts (if any)
-        // are untouched; only the active pointer clears.
         await SecureStore.deleteItemAsync(ACTIVE_USER_KEY);
       } finally {
         setIsLoading(false);
@@ -79,21 +104,21 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (identifier, password) => {
     setError(null);
     try {
-      const { accessToken: newAccessToken, refreshToken, user: loggedInUser } = await api.login({
-        identifier,
-        password,
-      });
+      const deviceId = await getDeviceId();
+      const result = await api.login({ identifier, password, deviceId });
+
       await upsertAccount({
-        id: loggedInUser.id,
-        username: loggedInUser.username,
-        email: loggedInUser.email,
-        full_name: loggedInUser.full_name,
-        refreshToken,
+        id: result.user.id,
+        username: result.user.username,
+        email: result.user.email,
+        full_name: result.user.full_name,
+        refreshToken: result.refreshToken,
       });
-      await SecureStore.setItemAsync(ACTIVE_USER_KEY, String(loggedInUser.id));
+
+      await SecureStore.setItemAsync(ACTIVE_USER_KEY, String(result.user.id));
       setAccounts(stripTokens(await getAccounts()));
-      setAccessToken(newAccessToken);
-      setUser(loggedInUser);
+      setAccessToken(result.accessToken);
+      setUser(result.user);
       return true;
     } catch (err) {
       setError(err.message);
@@ -101,9 +126,6 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // Backend register() only creates the account (no tokens), so chain a login
-  // to start the session right after. Logs in with username, not email —
-  // email is optional now, username always is.
   const register = useCallback(
     async ({ full_name, username, email, phone, password }) => {
       setError(null);
@@ -118,74 +140,97 @@ export function AuthProvider({ children }) {
     [login]
   );
 
-  // Signs out of the current session only — the account stays remembered
-  // (its refresh token untouched in ACCOUNTS_KEY), so it's still one tap
-  // away via switchAccount later, no password needed. Use removeAccount to
-  // actually forget one.
   const logout = useCallback(async () => {
+    const activeUserId = await SecureStore.getItemAsync(ACTIVE_USER_KEY);
+    const storedAccounts = await getAccounts();
+    const account = storedAccounts.find((a) => String(a.id) === activeUserId);
+
+    // Best-effort server-side revocation. Local state is cleared even when
+    // the device is offline; the server token will expire or can be revoked
+    // later by device/session administration.
+    if (account?.refreshToken) {
+      try {
+        await api.logout(account.refreshToken, await getDeviceId());
+      } catch {}
+      await upsertAccount({ ...account, refreshToken: null });
+    }
+
     await SecureStore.deleteItemAsync(ACTIVE_USER_KEY);
+    setAccounts(stripTokens(await getAccounts()));
     setAccessToken(null);
     setUser(null);
   }, []);
 
-  // Instantly switches to a different remembered account using its stored
-  // refresh token — no password. TrackingContext reacts to `user` changing
-  // and handles isolating that account's local data on its own.
   const switchAccount = useCallback(async (userId) => {
     const storedAccounts = await getAccounts();
     const account = storedAccounts.find((a) => a.id === userId);
     if (!account) throw new Error('That account is no longer remembered on this device');
+    if (!account.refreshToken) throw new Error('Please sign in to this account again');
 
-    const { accessToken: newAccessToken } = await api.refresh(account.refreshToken);
-    const me = await api.getMe(newAccessToken);
+    const deviceId = await getDeviceId();
+    const refreshed = await rotateRefreshToken(account.id, account.refreshToken, deviceId);
+
+    await upsertAccount({
+      ...account,
+      refreshToken: refreshed.refreshToken,
+    });
+
+    const me = await api.getMe(refreshed.accessToken);
     await SecureStore.setItemAsync(ACTIVE_USER_KEY, String(userId));
-    setAccessToken(newAccessToken);
+    setAccounts(stripTokens(await getAccounts()));
+    setAccessToken(refreshed.accessToken);
     setUser(me);
     return me;
   }, []);
 
-  // Actually forgets a remembered account (unlike logout). If it was the
-  // active one, also signs out of it.
   const removeAccount = useCallback(
     async (userId) => {
       const storedAccounts = await getAccounts();
+      const account = storedAccounts.find((a) => a.id === userId);
+
+      if (account?.refreshToken) {
+        try {
+          await api.logout(account.refreshToken);
+        } catch {}
+      }
+
       const remaining = storedAccounts.filter((a) => a.id !== userId);
       await saveAccounts(remaining);
       setAccounts(stripTokens(remaining));
 
       const activeUserId = await SecureStore.getItemAsync(ACTIVE_USER_KEY);
       if (activeUserId && Number(activeUserId) === userId) {
-        await logout();
+        await SecureStore.deleteItemAsync(ACTIVE_USER_KEY);
+        setAccessToken(null);
+        setUser(null);
       }
     },
-    [logout]
+    []
   );
 
-  // For callers (like the offline sync engine) that need a fresh access
-  // token on demand — e.g. after being offline long enough for the 15-minute
-  // access token to expire before signal came back. Re-reads the active
-  // account's refresh token rather than keeping it in JS state.
   const refreshAccessToken = useCallback(async () => {
     const activeUserId = await SecureStore.getItemAsync(ACTIVE_USER_KEY);
     const storedAccounts = await getAccounts();
     const account = storedAccounts.find((a) => String(a.id) === activeUserId);
-    if (!account) throw new Error('No refresh token available');
+    if (!account?.refreshToken) throw new Error('No refresh token available');
 
     try {
-      const { accessToken: newAccessToken } = await api.refresh(account.refreshToken);
-      setAccessToken(newAccessToken);
-      return newAccessToken;
+      const deviceId = await getDeviceId();
+      const refreshed = await rotateRefreshToken(account.id, account.refreshToken, deviceId);
+
+      await upsertAccount({
+        ...account,
+        refreshToken: refreshed.refreshToken,
+      });
+
+      setAccessToken(refreshed.accessToken);
+      return refreshed.accessToken;
     } catch (err) {
-      // Refresh token itself is invalid/expired (e.g. >30 days offline) —
-      // nothing to do but sign out of it; local unsynced data is untouched
-      // and will sync once someone's logged back in.
       await logout();
       throw err;
     }
   }, [logout]);
 
-  // Re-fetches the current user — call after a profile update so things
-  // like the Home screen greeting reflect it immediately.
   const refreshUser = useCallback(async () => {
     if (!accessToken) return;
     const me = await api.getMe(accessToken);

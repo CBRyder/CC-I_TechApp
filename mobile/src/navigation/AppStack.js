@@ -11,6 +11,7 @@ import PartsCategoryScreen from '../screens/parts/PartsCategoryScreen';
 import PartsListScreen from '../screens/parts/PartsListScreen';
 import ComponentGalleryScreen from '../screens/dev/ComponentGalleryScreen';
 import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
+import AdminSessionsScreen from '../screens/admin/AdminSessionsScreen';
 import AdminHomeScreen from '../screens/admin/AdminHomeScreen';
 import AdminVisitsScreen from '../screens/admin/AdminVisitsScreen';
 import AdminVisitDetailScreen from '../screens/admin/AdminVisitDetailScreen';
@@ -93,6 +94,11 @@ export default function AppStack() {
             name="AdminUsers"
             component={AdminUsersScreen}
             options={{ title: 'Users & Roles' }}
+          />
+          <Stack.Screen
+            name="AdminSessions"
+            component={AdminSessionsScreen}
+            options={{ title: 'Active Devices' }}
           />
           <Stack.Screen
             name="AdminVisits"

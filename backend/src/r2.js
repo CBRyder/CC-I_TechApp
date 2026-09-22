@@ -1,33 +1,37 @@
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 function getClient() {
   const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env;
   if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
-    throw new Error(
-      'R2 is not configured yet (missing R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY in .env)'
-    );
+    throw new Error('R2 storage is not configured');
   }
   return new S3Client({
     region: 'auto',
     endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: R2_ACCESS_KEY_ID,
-      secretAccessKey: R2_SECRET_ACCESS_KEY,
-    },
+    credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
   });
 }
 
-// Photos go straight from the device to R2 with this URL — never through
-// this server — so a photo upload never competes with API request handling.
-async function getPresignedUploadUrl(key) {
+function getBucket() {
   const bucket = process.env.R2_BUCKET_NAME;
-  if (!bucket) {
-    throw new Error('R2 is not configured yet (missing R2_BUCKET_NAME in .env)');
-  }
-  const client = getClient();
-  const command = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: 'image/jpeg' });
-  return getSignedUrl(client, command, { expiresIn: 900 }); // 15 minutes
+  if (!bucket) throw new Error('R2 storage is not configured');
+  return bucket;
 }
 
-module.exports = { getPresignedUploadUrl };
+async function getPresignedUploadUrl(key, contentType = 'image/jpeg') {
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: contentType,
+    ServerSideEncryption: 'AES256',
+  });
+  return getSignedUrl(getClient(), command, { expiresIn: 300 });
+}
+
+async function getPresignedDownloadUrl(key) {
+  const command = new GetObjectCommand({ Bucket: getBucket(), Key: key });
+  return getSignedUrl(getClient(), command, { expiresIn: 300 });
+}
+
+module.exports = { getPresignedUploadUrl, getPresignedDownloadUrl };

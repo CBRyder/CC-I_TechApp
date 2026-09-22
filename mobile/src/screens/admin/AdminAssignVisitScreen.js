@@ -38,6 +38,10 @@ export default function AdminAssignVisitScreen() {
   const [selectedVisit, setSelectedVisit] = useState(null);
   const [selectedTechId, setSelectedTechId] = useState(null);
   const [date, setDate] = useState(todayLocalDate());
+  // Explicit override for a visit's shop/road labeling — matters most for a
+  // tech who's both types, where there's no way to infer it up front (see
+  // backend/src/routes/admin.js's actsAsShopSql comment).
+  const [visitType, setVisitType] = useState('Road');
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId) || null;
   const selectedTech = techs.find((t) => t.id === selectedTechId) || null;
@@ -66,8 +70,19 @@ export default function AdminAssignVisitScreen() {
     setSelectedVisit(null);
     setSelectedTechId(null);
     setDate(todayLocalDate());
+    setVisitType('Road');
     setError(null);
     setSuccess(null);
+  };
+
+  // Auto-set the slider to match a single-type tech (nothing to decide);
+  // leave it as whatever's already picked for a tech who's both.
+  const selectTech = (techId) => {
+    setSelectedTechId(techId);
+    const tech = techs.find((t) => t.id === techId);
+    if (tech?.tech_types?.length === 1) {
+      setVisitType(tech.tech_types[0] === 'shop' ? 'Shop' : 'Road');
+    }
   };
 
   const handleSubmit = async () => {
@@ -91,7 +106,7 @@ export default function AdminAssignVisitScreen() {
           return;
         }
         const result = await api.assignVisit(
-          { jobId: selectedJob.id, userId: selectedTech.id, date },
+          { jobId: selectedJob.id, userId: selectedTech.id, date, visitType: visitType.toLowerCase() },
           accessToken
         );
         setSuccess(`Assigned ${result.visitCode} to ${selectedTech.full_name}.`);
@@ -103,7 +118,7 @@ export default function AdminAssignVisitScreen() {
         }
         await api.reassignVisit(
           selectedVisit.assignment_id,
-          { userId: selectedTech.id, date },
+          { userId: selectedTech.id, date, visitType: visitType.toLowerCase() },
           accessToken
         );
         setSuccess(`Reassigned ${selectedVisit.visit_code} to ${selectedTech.full_name}.`);
@@ -173,8 +188,11 @@ export default function AdminAssignVisitScreen() {
         placeholder="Select a tech"
         value={selectedTechId}
         options={techs.map((tech) => ({ key: tech.id, label: `${tech.full_name} (${tech.username})` }))}
-        onSelect={setSelectedTechId}
+        onSelect={selectTech}
       />
+
+      <SectionHeader>Visit Type</SectionHeader>
+      <SegmentedTabs options={['Road', 'Shop']} value={visitType} onChange={setVisitType} />
 
       <SectionHeader>Date</SectionHeader>
       <TextField label="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} />

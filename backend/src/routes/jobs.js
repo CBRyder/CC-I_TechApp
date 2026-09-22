@@ -1,16 +1,25 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
   try {
+    const roleResult = await pool.query(
+      `SELECT COALESCE(array_agg(role ORDER BY role), '{}') AS roles
+       FROM user_roles WHERE user_id = $1`,
+      [req.user.userId]
+    );
+    const admin = roleResult.rows[0].roles.includes('admin');
     const result = await pool.query(
-      `SELECT id, job_number, name, address, customer_name, status
-       FROM jobs
-       WHERE status = 'open'
-       ORDER BY job_number`
+      admin
+        ? `SELECT id, job_number, name, address, customer_name, status FROM jobs WHERE status = 'open' ORDER BY job_number`
+        : `SELECT DISTINCT j.id, j.job_number, j.name, j.address, j.customer_name, j.status
+           FROM jobs j JOIN job_assignments ja ON ja.job_id = j.id
+           WHERE j.status = 'open' AND ja.user_id = $1 ORDER BY j.job_number`,
+      admin ? [] : [req.user.userId]
     );
     res.json(result.rows);
   } catch (err) {
@@ -19,23 +28,25 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-// Any authenticated tech (not admin-only) — the notes/summaries other techs
-// left on past visits to this job, so someone heading out to it can see
-// what happened last time. Only submitted completions with an actual
-// summary show up; drafts and blank ones are skipped.
 router.get('/:jobId/history', requireAuth, async (req, res) => {
-  const { jobId } = req.params;
-
+  const jobId = Number(req.params.jobId);
+  if (!Number.isInteger(jobId) || jobId <= 0) return res.status(400).json({ error: 'Invalid jobId' });
   try {
+    if (!req.user.roles.includes('admin')) {
+      const access = await pool.query(
+        'SELECT 1 FROM job_assignments WHERE job_id = $1 AND user_id = $2 LIMIT 1',
+        [jobId, req.user.userId]
+      );
+      if (!access.rows.length) return res.status(403).json({ error: 'You are not authorized for this job' });
+    }
     const result = await pool.query(
-      `SELECT jc.id, jc.visit_summary, jc.submitted_at, u.full_name AS tech_name
+      `SELECT jc.id, jc.visit_summary, jc.submitted_at,
+              COALESCE(jc.employee_display_name, u.full_name) AS tech_name
        FROM job_completions jc
        JOIN job_segments js ON js.id = jc.job_segment_id
-       JOIN users u ON u.id = jc.user_id
-       WHERE js.job_id = $1
-         AND jc.submitted_at IS NOT NULL
-         AND jc.visit_summary IS NOT NULL
-         AND jc.visit_summary != ''
+       LEFT JOIN users u ON u.id = jc.user_id
+       WHERE js.job_id = $1 AND jc.submitted_at IS NOT NULL
+         AND jc.visit_summary IS NOT NULL AND jc.visit_summary != ''
        ORDER BY jc.submitted_at DESC`,
       [jobId]
     );
@@ -46,18 +57,10 @@ router.get('/:jobId/history', requireAuth, async (req, res) => {
   }
 });
 
-// Admin-only: create a job. Previously jobs could only be seeded via
-// migration — this is what the admin "add a job" screen calls.
 router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
   const { job_number, name, address, customer_name, location_name, total_visits } = req.body;
-
-  if (!job_number || !name) {
-    return res.status(400).json({ error: 'job_number and name are required' });
-  }
-  if (total_visits !== undefined && total_visits !== null && !Number.isInteger(total_visits)) {
-    return res.status(400).json({ error: 'total_visits must be an integer' });
-  }
-
+  if (!job_number || !name) return res.status(400).json({ error: 'job_number and name are required' });
+  if (total_visits != null && !Number.isInteger(total_visits)) return res.status(400).json({ error: 'total_visits must be an integer' });
   try {
     const result = await pool.query(
       `INSERT INTO jobs (job_number, name, address, customer_name, location_name, total_visits)
@@ -67,9 +70,7 @@ router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'A job with that job number already exists' });
-    }
+    if (err.code === '23505') return res.status(409).json({ error: 'A job with that job number already exists' });
     console.error(err);
     res.status(500).json({ error: 'Failed to create job' });
   }
@@ -77,22 +78,14 @@ router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// The device's local date, not the server's — a tech in a different
-// timezone than the server should see "today" as their own today. Callers
-// always pass it explicitly rather than relying on the server to guess.
 router.get('/assigned', requireAuth, async (req, res) => {
   const { date } = req.query;
-  if (!date || !DATE_RE.test(date)) {
-    return res.status(400).json({ error: 'date is required, as YYYY-MM-DD' });
-  }
-
+  if (!date || !DATE_RE.test(date)) return res.status(400).json({ error: 'date is required, as YYYY-MM-DD' });
   try {
     const result = await pool.query(
       `SELECT j.id, j.job_number, j.name, j.address, j.customer_name, j.status
-       FROM job_assignments ja
-       JOIN jobs j ON j.id = ja.job_id
-       WHERE ja.user_id = $1 AND ja.assigned_date = $2
-       ORDER BY j.job_number`,
+       FROM job_assignments ja JOIN jobs j ON j.id = ja.job_id
+       WHERE ja.user_id = $1 AND ja.assigned_date = $2 ORDER BY j.job_number`,
       [req.user.userId, date]
     );
     res.json(result.rows);
@@ -102,73 +95,34 @@ router.get('/assigned', requireAuth, async (req, res) => {
   }
 });
 
-// Dispatch — admin-only. A user can hold both the tech and admin roles at
-// once (see migration 008 / requireRole), so "admin assigns a job" and
-// "admin is also the tech working it" are both normal, not a contradiction.
 router.post('/:jobId/assign', requireAuth, requireRole('admin'), async (req, res) => {
   const { jobId } = req.params;
   const { user_id, date, visit_type } = req.body;
-  if (!user_id) {
-    return res.status(400).json({ error: 'user_id is required' });
-  }
-  if (!date || !DATE_RE.test(date)) {
-    return res.status(400).json({ error: 'date is required, as YYYY-MM-DD' });
-  }
+  if (!user_id || !date || !DATE_RE.test(date)) return res.status(400).json({ error: 'user_id and date are required' });
   if (visit_type !== undefined && visit_type !== null && !['shop', 'road'].includes(visit_type)) {
     return res.status(400).json({ error: "visit_type must be 'shop' or 'road'" });
   }
-
   try {
-    const jobResult = await pool.query(`SELECT id, job_number, total_visits FROM jobs WHERE id = $1`, [
-      jobId,
-    ]);
-    if (jobResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    const job = jobResult.rows[0];
-
-    const userResult = await pool.query(`SELECT id FROM users WHERE id = $1`, [user_id]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Ascending per job — visit 1, 2, 3... for this specific job. Computed
-    // here rather than a DB sequence since it needs to reset per job_id;
-    // fine for expected admin-only, low-concurrency usage.
-    const nextVisitResult = await pool.query(
-      `SELECT COALESCE(MAX(visit_number), 0) + 1 AS next FROM job_assignments WHERE job_id = $1`,
-      [jobId]
-    );
-    const visitNumber = nextVisitResult.rows[0].next;
-
+    const jobResult = await pool.query('SELECT id, job_number, total_visits FROM jobs WHERE id = $1', [jobId]);
+    if (!jobResult.rows.length) return res.status(404).json({ error: 'Job not found' });
+    const userResult = await pool.query(`SELECT id FROM users WHERE id = $1 AND status = 'active'`, [user_id]);
+    if (!userResult.rows.length) return res.status(404).json({ error: 'Active user not found' });
+    const next = await pool.query('SELECT COALESCE(MAX(visit_number), 0) + 1 AS next FROM job_assignments WHERE job_id = $1', [jobId]);
     // Idempotent — assigning the same job/user/date twice is a no-op (and
     // doesn't burn a visit number on the second call).
-    const insertResult = await pool.query(
+    const inserted = await pool.query(
       `INSERT INTO job_assignments (job_id, user_id, assigned_date, visit_number, visit_type)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (job_id, user_id, assigned_date) DO NOTHING
-       RETURNING visit_number`,
-      [jobId, user_id, date, visitNumber, visit_type || null]
+       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (job_id, user_id, assigned_date) DO NOTHING RETURNING visit_number`,
+      [jobId, user_id, date, next.rows[0].next, visit_type || null]
     );
-    const finalVisitNumber =
-      insertResult.rows[0]?.visit_number ??
-      (
-        await pool.query(
-          `SELECT visit_number FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3`,
-          [jobId, user_id, date]
-        )
-      ).rows[0].visit_number;
-
-    const visitCode = `${job.job_number}-V${finalVisitNumber}${
-      job.total_visits != null ? `-${job.total_visits}` : ''
-    }`;
-
+    const visitNumber = inserted.rows[0]?.visit_number ?? (
+      await pool.query('SELECT visit_number FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3', [jobId, user_id, date])
+    ).rows[0].visit_number;
+    const job = jobResult.rows[0];
+    await audit({ actorUserId: req.user.userId, targetUserId: Number(user_id), action: 'job_visit_assigned', resourceType: 'job_assignment', resourceId: inserted.rows[0]?.visit_number ?? visitNumber, ipAddress: req.ip, metadata: { job_id: Number(jobId), assigned_date: date } });
     res.status(201).json({
-      jobId: Number(jobId),
-      userId: Number(user_id),
-      date,
-      visitNumber: finalVisitNumber,
-      visitCode,
+      jobId: Number(jobId), userId: Number(user_id), date, visitNumber,
+      visitCode: `${job.job_number}-V${visitNumber}${job.total_visits != null ? `-${job.total_visits}` : ''}`,
     });
   } catch (err) {
     console.error(err);
@@ -179,18 +133,10 @@ router.post('/:jobId/assign', requireAuth, requireRole('admin'), async (req, res
 router.delete('/:jobId/assign', requireAuth, requireRole('admin'), async (req, res) => {
   const { jobId } = req.params;
   const { user_id, date } = req.query;
-  if (!user_id) {
-    return res.status(400).json({ error: 'user_id is required' });
-  }
-  if (!date || !DATE_RE.test(date)) {
-    return res.status(400).json({ error: 'date is required, as YYYY-MM-DD' });
-  }
-
+  if (!user_id || !date || !DATE_RE.test(date)) return res.status(400).json({ error: 'user_id and date are required' });
   try {
-    await pool.query(
-      `DELETE FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3`,
-      [jobId, user_id, date]
-    );
+    const result = await pool.query('DELETE FROM job_assignments WHERE job_id = $1 AND user_id = $2 AND assigned_date = $3 RETURNING id', [jobId, user_id, date]);
+    if (result.rows.length) await audit({ actorUserId: req.user.userId, targetUserId: Number(user_id), action: 'job_visit_unassigned', resourceType: 'job_assignment', resourceId: result.rows[0].id, ipAddress: req.ip, metadata: { job_id: Number(jobId), assigned_date: date } });
     res.status(204).send();
   } catch (err) {
     console.error(err);

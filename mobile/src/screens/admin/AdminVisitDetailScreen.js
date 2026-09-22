@@ -8,7 +8,7 @@ import { ScreenContainer, SectionHeader, EmptyState, Button, TextField, StatusPi
 // Admin's read-mostly view of a visit — everything the tech recorded
 // (notes, parts, arrival time) plus the things only an admin sets: the
 // umbrella/location names and the PO number for billing.
-export default function AdminVisitDetailScreen({ route }) {
+export default function AdminVisitDetailScreen({ route, navigation }) {
   const { assignmentId } = route.params;
   const { accessToken } = useAuth();
 
@@ -25,6 +25,7 @@ export default function AdminVisitDetailScreen({ route }) {
   const [jobSaved, setJobSaved] = useState(false);
 
   const [reopening, setReopening] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -92,6 +93,30 @@ export default function AdminVisitDetailScreen({ route }) {
               setError(err.message);
             } finally {
               setReopening(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete this visit?',
+      `Removes this dispatch record (${visit.visit_code}) — for a mismatched job, tech, or date. Any hours/notes already logged against it stay in the system, just no longer shown as a visit.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await api.deleteVisit(assignmentId, accessToken);
+              navigation.goBack();
+            } catch (err) {
+              setError(err.message);
+              setDeleting(false);
             }
           },
         },
@@ -188,6 +213,16 @@ export default function AdminVisitDetailScreen({ route }) {
           </Text>
         ))
       )}
+
+      <Button
+        variant="danger"
+        onPress={confirmDelete}
+        loading={deleting}
+        disabled={deleting}
+        style={{ marginTop: spacing.xl }}
+      >
+        Delete Visit
+      </Button>
     </ScreenContainer>
   );
 }

@@ -12,7 +12,13 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
-app.use(express.json());
+// Render sits behind a trusted reverse proxy. This makes req.ip represent
+// the connecting client IP instead of the proxy address, which is needed for
+// login abuse controls. Do not trust arbitrary forwarded hops.
+app.set('trust proxy', 1);
+
+// JSON endpoints never need large request bodies; photos upload directly to private R2.
+app.use(express.json({ limit: '100kb' }));
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'cc-i-techapp-backend' });

@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ const router = express.Router();
 // same underlying event (the tech tapped Finish) — only the admin-facing
 // label differs. For a tech who's exclusively one type, that's a fixed
 // answer. For a tech who's both, a dispatcher can set job_assignments
-// .visit_type explicitly when assigning (see migration 016) — if set,
+// .visit_type explicitly when assigning (see migration 023) — if set,
 // that wins outright; if left unset, it falls back to inferring from
 // this visit's own data: shop-style unless it actually has a travel
 // segment (the concrete signal they went "on the road" for it).
@@ -56,31 +57,34 @@ router.get('/visits', requireAuth, requireRole('admin'), async (req, res) => {
            j.customer_name,
            j.location_name,
            j.total_visits,
-           u.full_name AS assigned_to,
-           u.tech_types,
+           COALESCE(u.full_name, ja.employee_display_name) AS assigned_to,
+           COALESCE(u.tech_types, ja.employee_tech_types) AS tech_types,
            (j.job_number || '-V' || ja.visit_number::text ||
              CASE WHEN j.total_visits IS NOT NULL THEN '-' || j.total_visits::text ELSE '' END
            ) AS visit_code,
            EXISTS (
              SELECT 1 FROM job_completions jc
              JOIN job_segments js ON js.id = jc.job_segment_id
-             WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
+             WHERE js.job_id = ja.job_id
+               AND (js.user_id = ja.user_id OR (ja.user_id IS NULL AND js.employee_display_name = ja.employee_display_name))
                AND js.started_at::date = ja.assigned_date
                AND jc.submitted_at IS NOT NULL
            ) AS is_completed,
            EXISTS (
              SELECT 1 FROM job_segments js
-             WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
+             WHERE js.job_id = ja.job_id
+               AND (js.user_id = ja.user_id OR (ja.user_id IS NULL AND js.employee_display_name = ja.employee_display_name))
                AND js.started_at::date = ja.assigned_date
            ) AS has_segment,
            EXISTS (
              SELECT 1 FROM job_segments js
-             WHERE js.job_id = ja.job_id AND js.user_id = ja.user_id
+             WHERE js.job_id = ja.job_id
+               AND (js.user_id = ja.user_id OR (ja.user_id IS NULL AND js.employee_display_name = ja.employee_display_name))
                AND js.started_at::date = ja.assigned_date AND js.state = 'travel'
            ) AS has_travel_segment
          FROM job_assignments ja
          JOIN jobs j ON j.id = ja.job_id
-         JOIN users u ON u.id = ja.user_id
+         LEFT JOIN users u ON u.id = ja.user_id
        )
        SELECT assignment_id, job_id, user_id, assigned_date, visit_number, visit_type, job_number, job_name,
               address, customer_name, location_name, total_visits, assigned_to, tech_types, visit_code,
@@ -129,6 +133,86 @@ router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
   }
 });
 
+// Active device/session management. Session identifiers are opaque
+// server-side IDs; refresh tokens themselves are never returned.
+router.get('/audit', requireAuth, requireRole('admin'), async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const action = typeof req.query.action === 'string' ? req.query.action.trim() : null;
+  try {
+    const result = await pool.query(
+      `SELECT id, actor_user_id, actor_display_name, action, target_user_id,
+              resource_type, resource_id, ip_address, metadata, created_at
+       FROM audit_events
+       WHERE ($1::text IS NULL OR action = $1)
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [action || null, limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch audit events' });
+  }
+});
+
+router.get('/sessions', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         rt.id AS session_id,
+         rt.user_id,
+         u.full_name,
+         u.username,
+         rt.created_at,
+         rt.last_used_at,
+         rt.expires_at,
+         right(rt.device_id, 6) AS device_suffix
+       FROM refresh_tokens rt
+       JOIN users u ON u.id = rt.user_id
+       WHERE rt.revoked_at IS NULL
+         AND rt.expires_at > now()
+       ORDER BY rt.last_used_at DESC NULLS LAST, rt.created_at DESC`
+    );
+
+    res.json(
+      result.rows.map((row) => ({
+        ...row,
+        device_label: `Device ••••${row.device_suffix}`,
+      }))
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch active sessions' });
+  }
+});
+
+router.delete('/sessions/:sessionId', requireAuth, requireRole('admin'), async (req, res) => {
+  const sessionId = Number(req.params.sessionId);
+  if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    return res.status(400).json({ error: 'Invalid sessionId' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE refresh_tokens
+       SET revoked_at = COALESCE(revoked_at, now())
+       WHERE id = $1 AND revoked_at IS NULL
+       RETURNING id AS session_id, user_id`,
+      [sessionId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Active session not found' });
+    }
+
+    await audit({ actorUserId: req.user.userId, targetUserId: result.rows[0].user_id, action: 'session_revoked_by_admin', resourceType: 'session', resourceId: sessionId, ipAddress: req.ip });
+    res.json({ ...result.rows[0], revoked: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to revoke session' });
+  }
+});
+
 const VALID_ROLES = ['tech', 'admin'];
 
 // Replaces a user's full role set in one call (checkboxes on the admin
@@ -171,10 +255,56 @@ router.put('/users/:userId/roles', requireAuth, requireRole('admin'), async (req
     const rolesResult = await pool.query('SELECT role FROM user_roles WHERE user_id = $1', [
       userId,
     ]);
+    await audit({ actorUserId: req.user.userId, targetUserId: userId, action: 'user_roles_changed', resourceType: 'user', resourceId: userId, ipAddress: req.ip, metadata: { roles: rolesResult.rows.map((r) => r.role) } });
     res.json({ userId, roles: rolesResult.rows.map((r) => r.role) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update roles' });
+  }
+});
+
+router.post('/users/:userId/reset-password', requireAuth, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.userId);
+  const { new_password } = req.body;
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
+  if (typeof new_password !== 'string' || new_password.length < 8) {
+    return res.status(400).json({ error: 'new_password must be at least 8 characters' });
+  }
+
+  try {
+    const bcrypt = require('bcrypt');
+    const passwordHash = await bcrypt.hash(new_password, 10);
+
+    const result = await pool.query(
+      `UPDATE users
+       SET password_hash = $1
+       WHERE id = $2 AND status = 'active'
+       RETURNING id`,
+      [passwordHash, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Per the security policy, an admin reset changes the password but does
+    // not revoke the target user's existing sessions.
+    await audit({
+      actorUserId: req.user.userId,
+      targetUserId: userId,
+      action: 'admin_password_reset',
+      resourceType: 'user',
+      resourceId: userId,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, userId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 
@@ -212,36 +342,80 @@ router.put('/users/:userId/tech-types', requireAuth, requireRole('admin'), async
   }
 });
 
-// Soft-delete — sets status='inactive' rather than a real DELETE, since
-// users are referenced all over (time_entries, job_segments, job_assignments,
-// etc.) and a hard delete would either fail on the FK or silently orphan
-// history. Also revokes every refresh token so it can't keep using any
-// already-remembered session, and drops it from user_roles (status='active'
-// is what everything already gates on, but this keeps roles from lingering
-// on a deactivated account).
+// Hard-delete the account while preserving historical business records.
+// Historical rows retain only First Name + Last Initial; personal account data,
+// roles, preferences, and refresh-token sessions are deleted with the user.
 router.delete('/users/:userId', requireAuth, requireRole('admin'), async (req, res) => {
   const userId = Number(req.params.userId);
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
   if (userId === req.user.userId) {
     return res.status(400).json({ error: 'You cannot delete your own account' });
   }
 
+  const client = await pool.connect();
   try {
-    const userResult = await pool.query(
-      `UPDATE users SET status = 'inactive' WHERE id = $1 AND status = 'active' RETURNING id`,
+    await client.query('BEGIN');
+
+    const userResult = await client.query(
+      'SELECT id, full_name, tech_types FROM users WHERE id = $1 FOR UPDATE',
       [userId]
     );
-    if (userResult.rows.length === 0) {
+    const user = userResult.rows[0];
+    if (!user) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'User not found' });
     }
 
-    await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
-    await pool.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+    const parts = user.full_name.trim().split(/\\s+/);
+    const displayName =
+      parts.length > 1
+        ? `${parts[0]} ${parts[parts.length - 1].slice(-1).toUpperCase()}.`
+        : parts[0];
 
-    res.json({ userId, status: 'inactive' });
+    // Capture the minimum identity needed for business history before the
+    // users row is removed. No email, username, phone, or password survives.
+    const historyTables = [
+      'time_entries',
+      'job_segments',
+      'timesheets',
+      'job_completions',
+      'job_completion_parts',
+      'job_completion_photos',
+    ];
+
+    for (const table of historyTables) {
+      await client.query(
+        `UPDATE ${table}
+         SET employee_display_name = $1
+         WHERE user_id = $2`,
+        [displayName, userId]
+      );
+    }
+
+    await client.query(
+      `UPDATE job_assignments
+       SET employee_display_name = $1,
+           employee_tech_types = $2
+       WHERE user_id = $3`,
+      [displayName, user.tech_types || null, userId]
+    );
+
+    await client.query('DELETE FROM users WHERE id = $1', [userId]);
+    await client.query('COMMIT');
+
+    await audit({ actorUserId: req.user.userId, targetUserId: userId, action: 'user_deleted', resourceType: 'user', resourceId: userId, ipAddress: req.ip, metadata: { historical_name: displayName } });
+    res.json({ userId, status: 'deleted', historical_name: displayName });
   } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
     console.error(err);
     res.status(500).json({ error: 'Failed to delete user' });
+  } finally {
+    client.release();
   }
 });
 
@@ -259,13 +433,14 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
       `SELECT
          ja.id AS assignment_id, ja.job_id, ja.user_id, ja.assigned_date, ja.visit_number, ja.visit_type,
          j.job_number, j.name AS job_name, j.address, j.customer_name, j.location_name, j.total_visits,
-         u.full_name AS assigned_to, u.tech_types,
+         COALESCE(u.full_name, ja.employee_display_name) AS assigned_to,
+         COALESCE(u.tech_types, ja.employee_tech_types) AS tech_types,
          (j.job_number || '-V' || ja.visit_number::text ||
            CASE WHEN j.total_visits IS NOT NULL THEN '-' || j.total_visits::text ELSE '' END
          ) AS visit_code
        FROM job_assignments ja
        JOIN jobs j ON j.id = ja.job_id
-       JOIN users u ON u.id = ja.user_id
+       LEFT JOIN users u ON u.id = ja.user_id
        WHERE ja.id = $1`,
       [assignmentId]
     );
@@ -280,23 +455,29 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
     // has no travel segment), but harmless either way.
     const arrivedResult = await pool.query(
       `SELECT started_at FROM job_segments
-       WHERE job_id = $1 AND user_id = $2 AND started_at::date = $3 AND state = 'work'
+       WHERE job_id = $1
+         AND (user_id = $2 OR ($2::integer IS NULL AND employee_display_name = $4))
+         AND started_at::date = $3 AND state = 'work'
        ORDER BY started_at ASC LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const arrivedAt = arrivedResult.rows[0]?.started_at || null;
 
     const hasSegmentResult = await pool.query(
       `SELECT 1 FROM job_segments
-       WHERE job_id = $1 AND user_id = $2 AND started_at::date = $3 LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+       WHERE job_id = $1
+         AND (user_id = $2 OR ($2::integer IS NULL AND employee_display_name = $4))
+         AND started_at::date = $3 LIMIT 1`,
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const hasSegment = hasSegmentResult.rows.length > 0;
 
     const hasTravelResult = await pool.query(
       `SELECT 1 FROM job_segments
-       WHERE job_id = $1 AND user_id = $2 AND started_at::date = $3 AND state = 'travel' LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+       WHERE job_id = $1
+         AND (user_id = $2 OR ($2::integer IS NULL AND employee_display_name = $4))
+         AND started_at::date = $3 AND state = 'travel' LIMIT 1`,
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const hasTravelSegment = hasTravelResult.rows.length > 0;
 
@@ -304,10 +485,12 @@ router.get('/visits/:assignmentId', requireAuth, requireRole('admin'), async (re
       `SELECT jc.id, jc.visit_summary, jc.submitted_at, jc.po_number
        FROM job_completions jc
        JOIN job_segments js ON js.id = jc.job_segment_id
-       WHERE js.job_id = $1 AND js.user_id = $2 AND js.started_at::date = $3
+       WHERE js.job_id = $1
+         AND (js.user_id = $2 OR ($2::integer IS NULL AND js.employee_display_name = $4))
+         AND js.started_at::date = $3
          AND jc.submitted_at IS NOT NULL
        ORDER BY jc.submitted_at DESC LIMIT 1`,
-      [assignment.job_id, assignment.user_id, assignment.assigned_date]
+      [assignment.job_id, assignment.user_id, assignment.assigned_date, assignment.assigned_to]
     );
     const completion = completionResult.rows[0] || null;
     // Mirrors actsAsShopSql above (JS instead of SQL — no need for a whole
@@ -369,6 +552,7 @@ router.put('/jobs/:jobId', requireAuth, requireRole('admin'), async (req, res) =
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
+    await audit({ actorUserId: req.user.userId, action: 'job_metadata_updated', resourceType: 'job', resourceId: jobId, ipAddress: req.ip });
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -390,6 +574,7 @@ router.put('/job-completions/:completionId/po', requireAuth, requireRole('admin'
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Completion not found' });
     }
+    await audit({ actorUserId: req.user.userId, action: 'completion_po_updated', resourceType: 'job_completion', resourceId: completionId, ipAddress: req.ip });
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -415,6 +600,7 @@ router.post('/job-completions/:completionId/reopen', requireAuth, requireRole('a
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Completion not found' });
     }
+    await audit({ actorUserId: req.user.userId, action: 'completion_reopened', resourceType: 'job_completion', resourceId: completionId, ipAddress: req.ip });
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -514,12 +700,23 @@ router.delete('/visits/:assignmentId', requireAuth, requireRole('admin'), async 
   const assignmentId = Number(req.params.assignmentId);
 
   try {
-    const result = await pool.query('DELETE FROM job_assignments WHERE id = $1 RETURNING id', [
-      assignmentId,
-    ]);
+    const result = await pool.query(
+      'DELETE FROM job_assignments WHERE id = $1 RETURNING id, job_id, user_id, assigned_date',
+      [assignmentId]
+    );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Visit not found' });
     }
+    const deleted = result.rows[0];
+    await audit({
+      actorUserId: req.user.userId,
+      targetUserId: deleted.user_id,
+      action: 'job_visit_deleted',
+      resourceType: 'job_assignment',
+      resourceId: assignmentId,
+      ipAddress: req.ip,
+      metadata: { job_id: deleted.job_id, assigned_date: deleted.assigned_date },
+    });
     res.status(204).send();
   } catch (err) {
     console.error(err);
