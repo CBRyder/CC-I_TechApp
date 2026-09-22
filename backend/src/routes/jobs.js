@@ -4,7 +4,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, job_number, name, address, customer_name, status
@@ -27,11 +27,22 @@ router.get('/:jobId/history', requireAuth, async (req, res) => {
   const { jobId } = req.params;
 
   try {
+    if (!req.user.roles?.includes('admin')) {
+      const assignment = await pool.query(
+        'SELECT 1 FROM job_assignments WHERE job_id = $1 AND user_id = $2 LIMIT 1',
+        [jobId, req.user.userId]
+      );
+      if (assignment.rows.length === 0) {
+        return res.status(403).json({ error: 'You are not authorized to view this job history' });
+      }
+    }
+
     const result = await pool.query(
-      `SELECT jc.id, jc.visit_summary, jc.submitted_at, u.full_name AS tech_name
+      `SELECT jc.id, jc.visit_summary, jc.submitted_at,
+              COALESCE(u.full_name, jc.employee_display_name) AS tech_name
        FROM job_completions jc
        JOIN job_segments js ON js.id = jc.job_segment_id
-       JOIN users u ON u.id = jc.user_id
+       LEFT JOIN users u ON u.id = jc.user_id
        WHERE js.job_id = $1
          AND jc.submitted_at IS NOT NULL
          AND jc.visit_summary IS NOT NULL
