@@ -82,14 +82,13 @@ export default function SwitchAccountScreen({ navigation }) {
       <SectionHeader>Edit This Account</SectionHeader>
       <View
         style={{
-          borderWidth: 2,
-          borderColor: theme.colors.primary,
+          backgroundColor: theme.colors.primary,
           borderRadius: radius.md,
           paddingVertical: spacing.sm,
           marginBottom: spacing.sm,
         }}
       >
-        <Text variant="titleMedium" style={{ textAlign: 'center', color: theme.colors.primary }}>
+        <Text variant="titleMedium" style={{ textAlign: 'center', color: '#FFFFFF' }}>
           {user?.full_name}
         </Text>
       </View>
