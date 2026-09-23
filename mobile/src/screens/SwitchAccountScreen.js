@@ -80,6 +80,9 @@ export default function SwitchAccountScreen({ navigation }) {
   return (
     <ScreenContainer>
       <SectionHeader>Edit This Account</SectionHeader>
+      <Text variant="titleMedium" style={{ marginBottom: spacing.sm }}>
+        {user?.full_name}
+      </Text>
       <Button variant="outline" onPress={() => navigation.navigate('EditProfile')}>
         Edit Profile
       </Button>
