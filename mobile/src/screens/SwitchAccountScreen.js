@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Alert, View } from 'react-native';
 import { IconButton, Text, useTheme } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
-import { ScreenContainer, Button, SectionHeader, EmptyState, spacing } from '../ui';
+import { ScreenContainer, Button, SectionHeader, EmptyState, spacing, radius } from '../ui';
 
 export default function SwitchAccountScreen({ navigation }) {
   const { user, accounts, switchAccount, removeAccount, logout } = useAuth();
@@ -80,12 +80,19 @@ export default function SwitchAccountScreen({ navigation }) {
   return (
     <ScreenContainer>
       <SectionHeader>Edit This Account</SectionHeader>
-      <Text
-        variant="titleMedium"
-        style={{ textAlign: 'center', color: theme.colors.primary, marginBottom: spacing.sm }}
+      <View
+        style={{
+          borderWidth: 2,
+          borderColor: theme.colors.primary,
+          borderRadius: radius.md,
+          paddingVertical: spacing.sm,
+          marginBottom: spacing.sm,
+        }}
       >
-        {user?.full_name}
-      </Text>
+        <Text variant="titleMedium" style={{ textAlign: 'center', color: theme.colors.primary }}>
+          {user?.full_name}
+        </Text>
+      </View>
       <Button variant="outline" onPress={() => navigation.navigate('EditProfile')}>
         Edit Profile
       </Button>
