@@ -140,21 +140,13 @@ export function AuthProvider({ children }) {
     [login]
   );
 
+  // "Return to Login Screen" steps back to the login screen without
+  // destroying this device's saved session — the whole point of a quick-login
+  // avatar is that it's still there next time. It does NOT revoke the
+  // refresh token server-side or clear it locally. A real sign-out that
+  // revokes the session happens via removeAccount() ("Remove Account")
+  // instead, which is the explicit, confirmed, destructive action.
   const logout = useCallback(async () => {
-    const activeUserId = await SecureStore.getItemAsync(ACTIVE_USER_KEY);
-    const storedAccounts = await getAccounts();
-    const account = storedAccounts.find((a) => String(a.id) === activeUserId);
-
-    // Best-effort server-side revocation. Local state is cleared even when
-    // the device is offline; the server token will expire or can be revoked
-    // later by device/session administration.
-    if (account?.refreshToken) {
-      try {
-        await api.logout(account.refreshToken, await getDeviceId());
-      } catch {}
-      await upsertAccount({ ...account, refreshToken: null });
-    }
-
     await SecureStore.deleteItemAsync(ACTIVE_USER_KEY);
     setAccounts(stripTokens(await getAccounts()));
     setAccessToken(null);
