@@ -9,6 +9,12 @@ const router = express.Router();
 
 const REFRESH_TOKEN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ACTIVE_DEVICES = 3;
+// A rotated-away token presented again within this window is treated as a
+// benign race (two near-simultaneous requests on the same still-valid
+// token — a real thing on mobile: dropped-then-retried requests, a reload
+// firing mid-request, etc.), not theft. Real reuse — replaying a token
+// well after it was rotated — still revokes the whole family immediately.
+const REFRESH_REUSE_GRACE_MS = 10 * 1000;
 
 function normalizeDeviceId(value) {
   if (typeof value !== 'string') return null;
@@ -290,7 +296,7 @@ router.post('/refresh', async (req, res) => {
       'SELECT * FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE',
       [tokenHash]
     );
-    const stored = result.rows[0];
+    let stored = result.rows[0];
 
     if (!stored) {
       await client.query('ROLLBACK');
@@ -298,20 +304,46 @@ router.post('/refresh', async (req, res) => {
     }
 
     // Reuse of a token that has already been rotated is treated as a
-    // compromised device/session. Revoke the complete token family.
+    // compromised device/session. Revoke the complete token family — unless
+    // this looks like a benign race: the token was rotated moments ago
+    // (within REFRESH_REUSE_GRACE_MS) and its successor is still valid, in
+    // which case we absorb the duplicate request by continuing the rotation
+    // chain from the successor instead of nuking the session.
     if (stored.revoked_at || stored.replaced_by_hash) {
-      await client.query(
-        `UPDATE refresh_tokens
-         SET revoked_at = COALESCE(revoked_at, now())
-         WHERE user_id = $1 AND family_id = $2 AND revoked_at IS NULL`,
-        [stored.user_id, stored.family_id]
-      );
-      await client.query('COMMIT');
-      await audit({ action: 'refresh_token_reuse', targetUserId: stored.user_id, resourceType: 'session_family', resourceId: stored.family_id, ipAddress: req.ip });
-      return res.status(401).json({
-        error: 'Refresh token reuse detected; this device session has been revoked',
-        code: 'REFRESH_TOKEN_REUSE',
-      });
+      const revokedRecently =
+        stored.revoked_at && Date.now() - new Date(stored.revoked_at).getTime() < REFRESH_REUSE_GRACE_MS;
+
+      let successor = null;
+      if (stored.replaced_by_hash && revokedRecently) {
+        const successorResult = await client.query(
+          'SELECT * FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE',
+          [stored.replaced_by_hash]
+        );
+        const candidate = successorResult.rows[0];
+        if (candidate && !candidate.revoked_at && new Date(candidate.expires_at) > new Date()) {
+          successor = candidate;
+        }
+      }
+
+      if (!successor) {
+        await client.query(
+          `UPDATE refresh_tokens
+           SET revoked_at = COALESCE(revoked_at, now())
+           WHERE user_id = $1 AND family_id = $2 AND revoked_at IS NULL`,
+          [stored.user_id, stored.family_id]
+        );
+        await client.query('COMMIT');
+        await audit({ action: 'refresh_token_reuse', targetUserId: stored.user_id, resourceType: 'session_family', resourceId: stored.family_id, ipAddress: req.ip });
+        return res.status(401).json({
+          error: 'Refresh token reuse detected; this device session has been revoked',
+          code: 'REFRESH_TOKEN_REUSE',
+        });
+      }
+
+      // Benign race: fall through to the normal rotation flow below, but
+      // using the still-valid successor row instead of the stale one that
+      // was just presented.
+      stored = successor;
     }
 
     if (stored.expires_at <= new Date()) {
