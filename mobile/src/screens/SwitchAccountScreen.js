@@ -79,6 +79,18 @@ export default function SwitchAccountScreen({ navigation }) {
 
   return (
     <ScreenContainer>
+      <SectionHeader>Edit This Account</SectionHeader>
+      <Button variant="outline" onPress={() => navigation.navigate('EditProfile')}>
+        Edit Profile
+      </Button>
+      <Button
+        variant="outline"
+        onPress={() => navigation.navigate('ChangePassword')}
+        style={{ marginTop: spacing.sm }}
+      >
+        Change Password
+      </Button>
+
       <SectionHeader>Accounts on This Device</SectionHeader>
       {accounts.length === 0 ? (
         <EmptyState message="No remembered accounts." />
