@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useTheme } from 'react-native-paper';
+import { IconButton, useTheme } from 'react-native-paper';
 import { spacing, radius, touchTarget } from './theme';
 
 // variant: 'primary' | 'secondary' | 'outline' | 'danger' | 'text'
@@ -11,6 +11,11 @@ import { spacing, radius, touchTarget } from './theme';
 // subtle list row) — sizing steps up accordingly (bigger min height/padding
 // than a plain one-line button) rather than cramming two lines into the
 // normal compact size.
+//
+// `onDelete`, if given, adds a small trash icon centered at the bottom of
+// the button with its own tap target — nested Pressables resolve to
+// whichever one the touch actually lands on, so tapping the icon fires
+// onDelete without also firing onPress.
 export default function Button({
   children,
   subtitle,
@@ -18,6 +23,8 @@ export default function Button({
   variant = 'primary',
   disabled,
   loading,
+  onDelete,
+  deleteAccessibilityLabel,
   style,
 }) {
   const theme = useTheme();
@@ -30,6 +37,7 @@ export default function Button({
       style={({ pressed }) => [
         styles.base,
         subtitle && styles.baseWithSubtitle,
+        onDelete && styles.baseWithDelete,
         {
           backgroundColor: palette.background,
           borderColor: palette.border,
@@ -47,6 +55,16 @@ export default function Button({
           <Text style={[styles.label, { color: palette.text }]}>{children}</Text>
           {subtitle ? (
             <Text style={[styles.subtitle, { color: palette.text }]}>{subtitle}</Text>
+          ) : null}
+          {onDelete ? (
+            <IconButton
+              icon="delete-outline"
+              size={18}
+              iconColor={theme.colors.error}
+              onPress={onDelete}
+              accessibilityLabel={deleteAccessibilityLabel || 'Delete'}
+              style={styles.deleteIcon}
+            />
           ) : null}
         </>
       )}
@@ -87,6 +105,13 @@ const styles = StyleSheet.create({
   baseWithSubtitle: {
     minHeight: touchTarget * 1.5,
     paddingVertical: spacing.md,
+  },
+  baseWithDelete: {
+    paddingBottom: spacing.xs,
+  },
+  deleteIcon: {
+    margin: 0,
+    marginTop: spacing.xs,
   },
   label: {
     fontSize: 18,

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Alert, View } from 'react-native';
-import { IconButton, Text, useTheme } from 'react-native-paper';
+import { Text, useTheme } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 import { ScreenContainer, Button, SectionHeader, EmptyState, spacing, radius } from '../ui';
 
@@ -108,24 +108,19 @@ export default function SwitchAccountScreen({ navigation }) {
         <EmptyState message="No remembered accounts." />
       ) : (
         accounts.map((account) => (
-          <View key={account.id} style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm }}>
-            <Button
-              variant={account.id === user?.id ? 'secondary' : 'outline'}
-              subtitle={account.username}
-              loading={switching === account.id}
-              onPress={() => handleSwitch(account.id)}
-              style={{ flex: 1 }}
-            >
-              {account.full_name}
-              {account.id === user?.id ? ' (current)' : ''}
-            </Button>
-            <IconButton
-              icon="delete-outline"
-              iconColor={theme.colors.error}
-              onPress={() => confirmRemove(account)}
-              accessibilityLabel={`Remove ${account.full_name} from this device`}
-            />
-          </View>
+          <Button
+            key={account.id}
+            variant={account.id === user?.id ? 'secondary' : 'outline'}
+            subtitle={account.username}
+            loading={switching === account.id}
+            onPress={() => handleSwitch(account.id)}
+            onDelete={() => confirmRemove(account)}
+            deleteAccessibilityLabel={`Remove ${account.full_name} from this device`}
+            style={{ marginTop: spacing.sm }}
+          >
+            {account.full_name}
+            {account.id === user?.id ? ' (current)' : ''}
+          </Button>
         ))
       )}
 
