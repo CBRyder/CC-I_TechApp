@@ -8,6 +8,7 @@ const partsRoutes = require('./routes/parts');
 const jobCompletionsRoutes = require('./routes/jobCompletions');
 const meRoutes = require('./routes/me');
 const preferencesRoutes = require('./routes/preferences');
+const timesheetRoutes = require('./routes/timesheet');
 const adminRoutes = require('./routes/admin');
 
 const app = express();
@@ -32,6 +33,7 @@ app.use('/parts', partsRoutes);
 app.use('/job-completions', jobCompletionsRoutes);
 app.use('/me', meRoutes);
 app.use('/preferences', preferencesRoutes);
+app.use('/timesheet', timesheetRoutes);
 app.use('/admin', adminRoutes);
 
 const PORT = process.env.PORT || 3000;

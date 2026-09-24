@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { audit } = require('../audit');
+const { buildTimesheet, parseRange } = require('./timesheet');
 
 const router = express.Router();
 
@@ -721,6 +722,79 @@ router.delete('/visits/:assignmentId', requireAuth, requireRole('admin'), async 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete visit' });
+  }
+});
+
+// All-techs summary for the "All Techs" timesheet overview: one row per
+// tech, with daily/billable/non-billable totals for the range — everyone
+// holding the tech role, even one with zero hours in the range (a tech who
+// didn't work the period shouldn't just vanish from the list).
+router.get('/timesheet', requireAuth, requireRole('admin'), async (req, res) => {
+  const range = parseRange(req.query);
+  if (!range) {
+    return res.status(400).json({ error: 'start and end (YYYY-MM-DD, end >= start, 92 days max) are required' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT u.id AS user_id, u.full_name, u.username,
+              COALESCE(d.daily_hours, 0) AS daily_hours,
+              COALESCE(b.billable_hours, 0) AS billable_hours
+       FROM users u
+       JOIN user_roles ur ON ur.user_id = u.id AND ur.role = 'tech'
+       LEFT JOIN (
+         SELECT user_id, SUM(EXTRACT(EPOCH FROM (COALESCE(clock_out_at, now()) - clock_in_at))) / 3600.0 AS daily_hours
+         FROM time_entries
+         WHERE (clock_in_at AT TIME ZONE 'UTC')::date BETWEEN $1 AND $2
+         GROUP BY user_id
+       ) d ON d.user_id = u.id
+       LEFT JOIN (
+         SELECT user_id, SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))) / 3600.0 AS billable_hours
+         FROM job_segments
+         WHERE state IN ('travel', 'work') AND ended_at IS NOT NULL
+           AND (started_at AT TIME ZONE 'UTC')::date BETWEEN $1 AND $2
+         GROUP BY user_id
+       ) b ON b.user_id = u.id
+       WHERE u.status = 'active'
+       ORDER BY u.full_name`,
+      [range.start, range.end]
+    );
+    const techs = result.rows.map((r) => {
+      const dailyHours = Number(r.daily_hours);
+      const billableHours = Number(r.billable_hours);
+      return {
+        user_id: r.user_id,
+        full_name: r.full_name,
+        username: r.username,
+        daily_hours: dailyHours,
+        billable_hours: billableHours,
+        non_billable_hours: dailyHours - billableHours,
+      };
+    });
+    res.json({ start: range.start, end: range.end, techs });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to build timesheet summary' });
+  }
+});
+
+// A specific tech's day-by-day and per-job breakdown — same shape as the
+// self-service GET /timesheet, just for whichever tech an admin taps into
+// from the All Techs list.
+router.get('/timesheet/:userId', requireAuth, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.userId);
+  const range = parseRange(req.query);
+  if (!range) {
+    return res.status(400).json({ error: 'start and end (YYYY-MM-DD, end >= start, 92 days max) are required' });
+  }
+  try {
+    const userResult = await pool.query('SELECT id, full_name FROM users WHERE id = $1', [userId]);
+    if (!userResult.rows.length) return res.status(404).json({ error: 'User not found' });
+
+    const data = await buildTimesheet(userId, range.start, range.end);
+    res.json({ ...data, user: userResult.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to build timesheet' });
   }
 });
 
