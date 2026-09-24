@@ -15,4 +15,5 @@ export { default as VisitCard } from './VisitCard';
 export { default as SegmentedTabs } from './SegmentedTabs';
 export { default as SearchField } from './SearchField';
 export { default as FAB } from './FAB';
+export { default as CalendarRangePicker } from './CalendarRangePicker';
 export * from './theme';

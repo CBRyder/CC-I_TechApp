@@ -4,7 +4,7 @@ import HomeScreen from '../screens/HomeScreen';
 import JobDetailScreen from '../screens/JobDetailScreen';
 import CompleteJobScreen from '../screens/CompleteJobScreen';
 import VisitDetailScreen from '../screens/VisitDetailScreen';
-import HoursHistoryScreen from '../screens/HoursHistoryScreen';
+import TimesheetScreen from '../screens/TimesheetScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SwitchAccountScreen from '../screens/SwitchAccountScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
@@ -20,6 +20,8 @@ import AdminVisitDetailScreen from '../screens/admin/AdminVisitDetailScreen';
 import AdminCreateCustomerScreen from '../screens/admin/AdminCreateCustomerScreen';
 import AdminCreateJobScreen from '../screens/admin/AdminCreateJobScreen';
 import AdminAssignVisitScreen from '../screens/admin/AdminAssignVisitScreen';
+import AdminTimesheetScreen from '../screens/admin/AdminTimesheetScreen';
+import AdminTechTimesheetScreen from '../screens/admin/AdminTechTimesheetScreen';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -63,9 +65,9 @@ export default function AppStack() {
             options={{ title: 'Visit Details' }}
           />
           <Stack.Screen
-            name="HoursHistory"
-            component={HoursHistoryScreen}
-            options={{ title: 'Hours' }}
+            name="Timesheet"
+            component={TimesheetScreen}
+            options={{ title: 'Timesheet' }}
           />
           <Stack.Screen
             name="PartsCategory"
@@ -136,6 +138,16 @@ export default function AppStack() {
             name="AdminAssignVisit"
             component={AdminAssignVisitScreen}
             options={{ title: 'Assign Visit' }}
+          />
+          <Stack.Screen
+            name="AdminTimesheet"
+            component={AdminTimesheetScreen}
+            options={{ title: 'Timesheets' }}
+          />
+          <Stack.Screen
+            name="AdminTechTimesheet"
+            component={AdminTechTimesheetScreen}
+            options={{ title: 'Timesheet' }}
           />
         </>
       )}

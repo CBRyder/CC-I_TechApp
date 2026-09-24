@@ -88,7 +88,7 @@ export default function HomeScreen({ navigation }) {
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>
             Clock In
           </Button>
-          <Pressable onPress={() => navigation.navigate('HoursHistory')}>
+          <Pressable onPress={() => navigation.navigate('Timesheet')}>
             <Text style={{ textAlign: 'center', marginTop: spacing.md }}>
               {todaySummary.totalHours.toFixed(1)} hrs today
             </Text>

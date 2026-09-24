@@ -125,6 +125,20 @@ export function unassignVisit({ jobId, userId, date }, accessToken) {
   );
 }
 
+// --- Timesheet ---
+
+export function getTimesheet(start, end, accessToken) {
+  return request(`/timesheet?start=${start}&end=${end}`, { accessToken });
+}
+
+export function getAdminTimesheet(start, end, accessToken) {
+  return request(`/admin/timesheet?start=${start}&end=${end}`, { accessToken });
+}
+
+export function getAdminTechTimesheet(userId, start, end, accessToken) {
+  return request(`/admin/timesheet/${userId}?start=${start}&end=${end}`, { accessToken });
+}
+
 // --- Offline-first sync ---
 
 export function syncTimeEntry(payload, accessToken) {

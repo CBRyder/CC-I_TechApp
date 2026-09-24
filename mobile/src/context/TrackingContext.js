@@ -289,7 +289,6 @@ export function TrackingProvider({ children }) {
     // writes go through the wrappers above so they trigger a sync
     getPendingCompletions: local.getPendingCompletions,
     getTodaySummary: local.getTodaySummary,
-    getHoursHistory: local.getHoursHistory,
     clearCompletedVisits: local.clearCompletedVisits,
     getJobCompletion: local.getJobCompletion,
     getCompletionParts: local.getCompletionParts,

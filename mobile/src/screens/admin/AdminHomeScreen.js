@@ -49,6 +49,12 @@ export default function AdminHomeScreen({ navigation }) {
         Assign Visit
       </Button>
       <Button
+        onPress={() => navigation.navigate('AdminTimesheet')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Timesheets
+      </Button>
+      <Button
         variant="outline"
         onPress={() => navigation.navigate('AdminCreateJob')}
         style={{ marginTop: spacing.sm, width: '100%' }}
