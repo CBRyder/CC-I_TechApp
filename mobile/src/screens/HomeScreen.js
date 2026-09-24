@@ -1,10 +1,10 @@
 import React, { useCallback, useState } from 'react';
 import { StyleSheet, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Text, Button, Avatar, Card } from 'react-native-paper';
+import { Text, Button, Avatar, Card, useTheme } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 import { useTracking } from '../context/TrackingContext';
-import { ScreenContainer, ClockBanner, spacing } from '../ui';
+import { ScreenContainer, ClockBanner, spacing, radius } from '../ui';
 
 const STATE_LABELS = {
   travel: 'Traveling to job',
@@ -13,6 +13,7 @@ const STATE_LABELS = {
 };
 
 export default function HomeScreen({ navigation }) {
+  const theme = useTheme();
   const { user } = useAuth();
   // Only for a tech who's exclusively shop — a tech who's both sees the
   // regular road-style labels (Pause/Finish Job); the underlying action is
@@ -88,9 +89,19 @@ export default function HomeScreen({ navigation }) {
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>
             Clock In
           </Button>
-          <Pressable onPress={() => navigation.navigate('Timesheet')}>
-            <Text style={{ textAlign: 'center', marginTop: spacing.md }}>
-              {todaySummary.totalHours.toFixed(1)} hrs today
+          <Pressable
+            onPress={() => navigation.navigate('Timesheet')}
+            style={({ pressed }) => [
+              styles.hoursButton,
+              { borderColor: theme.colors.primary },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Text variant="titleLarge" style={{ fontWeight: '700', color: theme.colors.primary }}>
+              {todaySummary.totalHours.toFixed(1)} hrs
+            </Text>
+            <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+              Today
             </Text>
           </Pressable>
           {todaySummary.visits.map((visit) => (
@@ -227,6 +238,14 @@ const styles = StyleSheet.create({
   primaryButton: {
     marginTop: 8,
     width: '100%',
+  },
+  hoursButton: {
+    marginTop: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
   secondaryButton: {
     marginTop: 12,
