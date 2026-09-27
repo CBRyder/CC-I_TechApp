@@ -152,7 +152,9 @@ export default function AdminUsersScreen() {
                 {target.username}
                 {target.email ? ` · ${target.email}` : ''}
               </Text>
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              {/* Wraps — three role chips plus the delete icon don't fit one
+                  line on a phone, and without wrap the last chip was cut off. */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm }}>
                 {ALL_ROLES.map((role) => (
                   <Chip
                     key={role}

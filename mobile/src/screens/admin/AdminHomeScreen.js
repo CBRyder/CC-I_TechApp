@@ -26,6 +26,16 @@ export default function AdminHomeScreen({ navigation }) {
         Admin
       </Text>
 
+      {user?.roles?.includes('supervisor') && (
+        <Button
+          variant="outline"
+          onPress={() => navigation.navigate('SupervisorHome')}
+          style={{ marginTop: spacing.md, width: '100%' }}
+        >
+          Supervisor
+        </Button>
+      )}
+
       <SectionHeader>Admin</SectionHeader>
       <Button onPress={() => navigation.navigate('AdminUsers')} style={{ width: '100%' }}>
         Users &amp; Roles

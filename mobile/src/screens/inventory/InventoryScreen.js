@@ -24,9 +24,9 @@ const PO_FILTERS = ['Open', 'Received', 'Cancelled'];
 // Inventory hub for admins and supervisors: stock levels + sell prices on
 // one tab, supplier purchase orders on the other. Parts and POs each open
 // their own detail screen; the + button adds whichever the tab is showing.
-export default function InventoryScreen({ navigation }) {
+export default function InventoryScreen({ navigation, route }) {
   const { accessToken } = useAuth();
-  const [tab, setTab] = useState(TABS[0]);
+  const [tab, setTab] = useState(TABS.includes(route.params?.tab) ? route.params.tab : TABS[0]);
   const [stockFilter, setStockFilter] = useState(STOCK_FILTERS[0]);
   const [poFilter, setPoFilter] = useState(PO_FILTERS[0]);
   const [query, setQuery] = useState('');
