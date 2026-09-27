@@ -17,24 +17,24 @@ function parseRange(query) {
 
 // Daily hours (from time_entries) and billable hours (travel + work job_segments,
 // only finished ones — an in-progress segment isn't a finalized timesheet fact
-// yet), bucketed by the same UTC calendar date the mobile app already uses for
-// its local, device-only hours history (see mobile/src/db/local.js).
+// yet), bucketed by calendar date in the business time zone (set per
+// connection in db.js), matching the local dates the phones use.
 async function buildTimesheet(userId, start, end) {
   const dailyResult = await pool.query(
-    `SELECT to_char(clock_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+    `SELECT to_char(clock_in_at, 'YYYY-MM-DD') AS date,
             SUM(EXTRACT(EPOCH FROM (COALESCE(clock_out_at, now()) - clock_in_at))) / 3600.0 AS daily_hours
      FROM time_entries
-     WHERE user_id = $1 AND (clock_in_at AT TIME ZONE 'UTC')::date BETWEEN $2 AND $3
+     WHERE user_id = $1 AND clock_in_at::date BETWEEN $2 AND $3
      GROUP BY 1`,
     [userId, start, end]
   );
 
   const billableByDateResult = await pool.query(
-    `SELECT to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+    `SELECT to_char(started_at, 'YYYY-MM-DD') AS date,
             SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))) / 3600.0 AS billable_hours
      FROM job_segments
      WHERE user_id = $1 AND state IN ('travel', 'work') AND ended_at IS NOT NULL
-       AND (started_at AT TIME ZONE 'UTC')::date BETWEEN $2 AND $3
+       AND started_at::date BETWEEN $2 AND $3
      GROUP BY 1`,
     [userId, start, end]
   );
@@ -64,7 +64,7 @@ async function buildTimesheet(userId, start, end) {
      FROM job_segments js
      JOIN jobs j ON j.id = js.job_id
      WHERE js.user_id = $1 AND js.state IN ('travel', 'work') AND js.ended_at IS NOT NULL
-       AND (js.started_at AT TIME ZONE 'UTC')::date BETWEEN $2 AND $3
+       AND js.started_at::date BETWEEN $2 AND $3
      GROUP BY js.job_id, j.job_number, j.name
      ORDER BY j.job_number`,
     [userId, start, end]

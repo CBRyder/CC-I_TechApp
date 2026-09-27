@@ -744,14 +744,14 @@ router.get('/timesheet', requireAuth, requireRole('admin'), async (req, res) => 
        LEFT JOIN (
          SELECT user_id, SUM(EXTRACT(EPOCH FROM (COALESCE(clock_out_at, now()) - clock_in_at))) / 3600.0 AS daily_hours
          FROM time_entries
-         WHERE (clock_in_at AT TIME ZONE 'UTC')::date BETWEEN $1 AND $2
+         WHERE clock_in_at::date BETWEEN $1 AND $2
          GROUP BY user_id
        ) d ON d.user_id = u.id
        LEFT JOIN (
          SELECT user_id, SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))) / 3600.0 AS billable_hours
          FROM job_segments
          WHERE state IN ('travel', 'work') AND ended_at IS NOT NULL
-           AND (started_at AT TIME ZONE 'UTC')::date BETWEEN $1 AND $2
+           AND started_at::date BETWEEN $1 AND $2
          GROUP BY user_id
        ) b ON b.user_id = u.id
        WHERE u.status = 'active'
@@ -793,7 +793,7 @@ router.get('/timesheet/:userId', requireAuth, requireRole('admin'), async (req, 
     const data = await buildTimesheet(userId, range.start, range.end);
     const entriesResult = await pool.query(
       `${TIME_ENTRY_INFO_SQL}
-       WHERE te.user_id = $1 AND (te.clock_in_at AT TIME ZONE 'UTC')::date BETWEEN $2 AND $3
+       WHERE te.user_id = $1 AND te.clock_in_at::date BETWEEN $2 AND $3
        ORDER BY te.clock_in_at`,
       [userId, range.start, range.end]
     );
@@ -805,11 +805,11 @@ router.get('/timesheet/:userId', requireAuth, requireRole('admin'), async (req, 
 });
 
 // One row per clock-in/clock-out, plus the job numbers of any completed
-// jobs logged inside it. Bucketed by the same UTC date as buildTimesheet so
+// jobs logged inside it. Bucketed by the same business-time-zone date as buildTimesheet so
 // a day's entries always line up with that day's Daily Hours row.
 const TIME_ENTRY_INFO_SQL = `
   SELECT te.id, te.user_id, te.clock_in_at, te.clock_out_at,
-         to_char(te.clock_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+         to_char(te.clock_in_at, 'YYYY-MM-DD') AS date,
          EXTRACT(EPOCH FROM (COALESCE(te.clock_out_at, now()) - te.clock_in_at)) / 3600.0 AS hours,
          ARRAY(
            SELECT DISTINCT j.job_number
@@ -946,7 +946,7 @@ router.delete('/timesheet/:userId', requireAuth, requireRole('admin'), async (re
   }
   try {
     const result = await deleteTimeEntries({
-      where: `te.user_id = $1 AND (te.clock_in_at AT TIME ZONE 'UTC')::date BETWEEN $2 AND $3`,
+      where: `te.user_id = $1 AND te.clock_in_at::date BETWEEN $2 AND $3`,
       params: [userId, range.start, range.end],
     });
     await audit({
