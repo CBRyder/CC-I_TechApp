@@ -28,7 +28,13 @@ export default function SupervisorHomeScreen({ navigation }) {
         onPress={() => navigation.navigate('Inventory', { tab: 'Stock' })}
         style={{ width: '100%' }}
       >
-        Stock &amp; Prices
+        Stock Levels
+      </Button>
+      <Button
+        onPress={() => navigation.navigate('InventoryList')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Inventory List
       </Button>
       <Button
         onPress={() => navigation.navigate('Inventory', { tab: 'Purchase Orders' })}
@@ -42,13 +48,6 @@ export default function SupervisorHomeScreen({ navigation }) {
         style={{ marginTop: spacing.sm, width: '100%' }}
       >
         New Purchase Order
-      </Button>
-      <Button
-        variant="outline"
-        onPress={() => navigation.navigate('InventoryPart', { partId: null })}
-        style={{ marginTop: spacing.sm, width: '100%' }}
-      >
-        Add Part
       </Button>
     </ScreenContainer>
   );
