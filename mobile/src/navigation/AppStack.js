@@ -22,10 +22,10 @@ import AdminCreateJobScreen from '../screens/admin/AdminCreateJobScreen';
 import AdminAssignVisitScreen from '../screens/admin/AdminAssignVisitScreen';
 import AdminTimesheetScreen from '../screens/admin/AdminTimesheetScreen';
 import AdminTechTimesheetScreen from '../screens/admin/AdminTechTimesheetScreen';
+import SupervisorHomeScreen from '../screens/supervisor/SupervisorHomeScreen';
 import InventoryScreen from '../screens/inventory/InventoryScreen';
 import InventoryPartScreen from '../screens/inventory/InventoryPartScreen';
 import PurchaseOrderScreen from '../screens/inventory/PurchaseOrderScreen';
-import { IconButton } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -54,7 +54,7 @@ export default function AppStack() {
     : isAdmin
       ? 'AdminHome'
       : isSupervisor
-        ? 'Inventory'
+        ? 'SupervisorHome'
         : 'Settings';
 
   return (
@@ -166,25 +166,7 @@ export default function AppStack() {
       )}
       {canManageInventory && (
         <>
-          <Stack.Screen
-            name="Inventory"
-            component={InventoryScreen}
-            options={({ navigation }) => ({
-              title: 'Inventory',
-              // A supervisor-only account lands here with nothing behind it,
-              // so it needs its own way to Settings (switch account, log out).
-              headerRight:
-                initialRouteName === 'Inventory'
-                  ? () => (
-                      <IconButton
-                        icon="cog-outline"
-                        onPress={() => navigation.navigate('Settings')}
-                        accessibilityLabel="Settings"
-                      />
-                    )
-                  : undefined,
-            })}
-          />
+          <Stack.Screen name="Inventory" component={InventoryScreen} options={{ title: 'Inventory' }} />
           <Stack.Screen
             name="InventoryPart"
             component={InventoryPartScreen}
@@ -196,6 +178,13 @@ export default function AppStack() {
             options={{ title: 'Purchase Order' }}
           />
         </>
+      )}
+      {isSupervisor && (
+        <Stack.Screen
+          name="SupervisorHome"
+          component={SupervisorHomeScreen}
+          options={{ title: isTech || isAdmin ? 'Supervisor' : 'CC-I Tech App' }}
+        />
       )}
       {isDev && (
         <Stack.Screen

@@ -84,14 +84,14 @@ export default function HomeScreen({ navigation }) {
         </Button>
       )}
 
-      {user?.roles?.includes('supervisor') && !user?.roles?.includes('admin') && (
+      {user?.roles?.includes('supervisor') && (
         <Button
           mode="outlined"
-          icon="package-variant-closed"
-          onPress={() => navigation.navigate('Inventory')}
+          icon="clipboard-account-outline"
+          onPress={() => navigation.navigate('SupervisorHome')}
           style={styles.adminButton}
         >
-          Inventory &amp; POs
+          Supervisor
         </Button>
       )}
 
