@@ -139,6 +139,23 @@ export function getAdminTechTimesheet(userId, start, end, accessToken) {
   return request(`/admin/timesheet/${userId}?start=${start}&end=${end}`, { accessToken });
 }
 
+// Deletes resolve to { deleted_count, deleted_hours, skipped } — entries
+// still clocked in or holding a completed job are skipped, not deleted.
+export function deleteTimeEntry(entryId, accessToken) {
+  return request(`/admin/time-entries/${entryId}`, { method: 'DELETE', accessToken });
+}
+
+export function deleteTechHoursInRange(userId, start, end, accessToken) {
+  return request(`/admin/timesheet/${userId}?start=${start}&end=${end}`, {
+    method: 'DELETE',
+    accessToken,
+  });
+}
+
+export function deleteAllTechHours(userId, accessToken) {
+  return request(`/admin/timesheet/${userId}/all`, { method: 'DELETE', accessToken });
+}
+
 // --- Offline-first sync ---
 
 export function syncTimeEntry(payload, accessToken) {
@@ -275,3 +292,48 @@ export function reopenCompletion(completionId, accessToken) {
 }
 
 export { ApiError };
+
+// --- Inventory (admin + supervisor) ---
+
+export function getInventoryParts(accessToken) {
+  return request('/inventory/parts', { accessToken });
+}
+
+export function getInventoryPart(partId, accessToken) {
+  return request(`/inventory/parts/${partId}`, { accessToken });
+}
+
+export function createInventoryPart(fields, accessToken) {
+  return request('/inventory/parts', { method: 'POST', body: fields, accessToken });
+}
+
+export function updateInventoryPart(partId, fields, accessToken) {
+  return request(`/inventory/parts/${partId}`, { method: 'PUT', body: fields, accessToken });
+}
+
+// `adjustment` is either { change, note } or { count, note } (a physical count).
+export function adjustInventoryStock(partId, adjustment, accessToken) {
+  return request(`/inventory/parts/${partId}/adjust`, { method: 'POST', body: adjustment, accessToken });
+}
+
+export function getPurchaseOrders(status, accessToken) {
+  return request(`/inventory/purchase-orders${status ? `?status=${status}` : ''}`, { accessToken });
+}
+
+export function getPurchaseOrder(poId, accessToken) {
+  return request(`/inventory/purchase-orders/${poId}`, { accessToken });
+}
+
+// `po` is { vendor, notes, items: [{ part_id, quantity }] }.
+export function createPurchaseOrder(po, accessToken) {
+  return request('/inventory/purchase-orders', { method: 'POST', body: po, accessToken });
+}
+
+export function updatePurchaseOrder(poId, po, accessToken) {
+  return request(`/inventory/purchase-orders/${poId}`, { method: 'PUT', body: po, accessToken });
+}
+
+// action: 'order' | 'receive' | 'cancel'
+export function setPurchaseOrderStatus(poId, action, accessToken) {
+  return request(`/inventory/purchase-orders/${poId}/${action}`, { method: 'POST', accessToken });
+}

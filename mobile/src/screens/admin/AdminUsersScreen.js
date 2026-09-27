@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/client';
 import { ScreenContainer, SectionHeader, EmptyState, SegmentedTabs, spacing, radius } from '../../ui';
 
-const ALL_ROLES = ['tech', 'admin'];
+const ALL_ROLES = ['tech', 'supervisor', 'admin'];
 
 // 3-way toggle, not two independent checkboxes — a tech can be both, but
 // picking a position is clearer UX than two chips that both happen to be on.

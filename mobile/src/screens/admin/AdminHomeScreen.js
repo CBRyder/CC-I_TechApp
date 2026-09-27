@@ -55,6 +55,12 @@ export default function AdminHomeScreen({ navigation }) {
         Timesheets
       </Button>
       <Button
+        onPress={() => navigation.navigate('Inventory')}
+        style={{ marginTop: spacing.sm, width: '100%' }}
+      >
+        Inventory &amp; POs
+      </Button>
+      <Button
         variant="outline"
         onPress={() => navigation.navigate('AdminCreateJob')}
         style={{ marginTop: spacing.sm, width: '100%' }}

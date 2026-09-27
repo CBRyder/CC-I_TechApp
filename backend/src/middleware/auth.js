@@ -46,7 +46,9 @@ async function requireAuth(req, res, next) {
   }
 }
 
-function requireRole(role) {
+// Passes if the caller holds ANY of the given roles, e.g.
+// requireRole('admin', 'supervisor').
+function requireRole(...roles) {
   return async (req, res, next) => {
     try {
       const result = await pool.query(
@@ -54,14 +56,14 @@ function requireRole(role) {
          FROM user_roles ur
          JOIN users u ON u.id = ur.user_id
          WHERE ur.user_id = $1
-           AND ur.role = $2
+           AND ur.role = ANY($2)
            AND u.status = 'active'
          LIMIT 1`,
-        [req.user.userId, role]
+        [req.user.userId, roles]
       );
 
       if (result.rows.length === 0) {
-        return res.status(403).json({ error: `Requires the ${role} role` });
+        return res.status(403).json({ error: `Requires the ${roles.join(' or ')} role` });
       }
 
       next();

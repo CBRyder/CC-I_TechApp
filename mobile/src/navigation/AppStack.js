@@ -22,6 +22,10 @@ import AdminCreateJobScreen from '../screens/admin/AdminCreateJobScreen';
 import AdminAssignVisitScreen from '../screens/admin/AdminAssignVisitScreen';
 import AdminTimesheetScreen from '../screens/admin/AdminTimesheetScreen';
 import AdminTechTimesheetScreen from '../screens/admin/AdminTechTimesheetScreen';
+import InventoryScreen from '../screens/inventory/InventoryScreen';
+import InventoryPartScreen from '../screens/inventory/InventoryPartScreen';
+import PurchaseOrderScreen from '../screens/inventory/PurchaseOrderScreen';
+import { IconButton } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -35,6 +39,9 @@ export default function AppStack() {
   const isDev = user?.roles?.includes('dev');
   const isAdmin = user?.roles?.includes('admin');
   const isTech = user?.roles?.includes('tech');
+  // Supervisors (and admins) run shop inventory — stock, prices, supplier POs.
+  const isSupervisor = user?.roles?.includes('supervisor');
+  const canManageInventory = isAdmin || isSupervisor;
 
   // Every tech-facing screen (clock in/out, job selection, parts, hours) is
   // meaningless — and per-account local data it shouldn't even touch — for
@@ -42,7 +49,13 @@ export default function AppStack() {
   // registered at all for one, not just hidden behind nav links. It lands
   // on AdminHome instead of Home and has no way to reach any of them, not
   // even by guessing a route name.
-  const initialRouteName = isTech ? 'Home' : isAdmin ? 'AdminHome' : 'Settings';
+  const initialRouteName = isTech
+    ? 'Home'
+    : isAdmin
+      ? 'AdminHome'
+      : isSupervisor
+        ? 'Inventory'
+        : 'Settings';
 
   return (
     <Stack.Navigator initialRouteName={initialRouteName}>
@@ -148,6 +161,39 @@ export default function AppStack() {
             name="AdminTechTimesheet"
             component={AdminTechTimesheetScreen}
             options={{ title: 'Timesheet' }}
+          />
+        </>
+      )}
+      {canManageInventory && (
+        <>
+          <Stack.Screen
+            name="Inventory"
+            component={InventoryScreen}
+            options={({ navigation }) => ({
+              title: 'Inventory',
+              // A supervisor-only account lands here with nothing behind it,
+              // so it needs its own way to Settings (switch account, log out).
+              headerRight:
+                initialRouteName === 'Inventory'
+                  ? () => (
+                      <IconButton
+                        icon="cog-outline"
+                        onPress={() => navigation.navigate('Settings')}
+                        accessibilityLabel="Settings"
+                      />
+                    )
+                  : undefined,
+            })}
+          />
+          <Stack.Screen
+            name="InventoryPart"
+            component={InventoryPartScreen}
+            options={{ title: 'Part' }}
+          />
+          <Stack.Screen
+            name="PurchaseOrder"
+            component={PurchaseOrderScreen}
+            options={{ title: 'Purchase Order' }}
           />
         </>
       )}

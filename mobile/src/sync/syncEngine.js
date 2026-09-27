@@ -56,16 +56,29 @@ async function runSyncPass(accessToken, refreshAccessToken, isRetry) {
 
     const unsyncedCompletions = await local.getUnsyncedCompletions();
     for (const completion of unsyncedCompletions) {
+      // A submit carries the final parts list — the server reconciles to it
+      // and deducts shop parts from stock (parts can't sync individually
+      // once the completion is submitted).
+      const parts = completion.submitted_at
+        ? (await local.getCompletionParts(completion.client_id)).map((p) => ({
+            client_id: p.client_id,
+            part_id: p.part_id,
+            quantity: p.quantity,
+            from_shop: !!p.from_shop,
+          }))
+        : undefined;
       const result = await api.syncJobCompletion(
         {
           client_id: completion.client_id,
           job_segment_client_id: completion.job_segment_client_id,
           visit_summary: completion.visit_summary,
           submitted_at: completion.submitted_at,
+          parts,
         },
         accessToken
       );
       await local.markCompletionSynced(completion.client_id, result.id);
+      if (parts) await local.markCompletionPartsSynced(completion.client_id);
       counts.completions++;
     }
 
@@ -77,6 +90,7 @@ async function runSyncPass(accessToken, refreshAccessToken, isRetry) {
           job_completion_client_id: part.job_completion_client_id,
           part_id: part.part_id,
           quantity: part.quantity,
+          from_shop: !!part.from_shop,
         },
         accessToken
       );

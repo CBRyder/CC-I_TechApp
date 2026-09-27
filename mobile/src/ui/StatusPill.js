@@ -13,6 +13,10 @@ const LABELS = {
   in_progress: 'In Progress',
   shop_return: 'Shop Return',
   completed: 'Completed',
+  draft: 'Draft',
+  ordered: 'Ordered',
+  received: 'Received',
+  cancelled: 'Cancelled',
 };
 
 // state: any key in stateColors (theme.js) — add more there as this app's

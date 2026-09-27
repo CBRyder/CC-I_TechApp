@@ -181,6 +181,7 @@ async function setupDb() {
   await ensureColumn(db, 'job_completions', 'user_id', 'INTEGER');
   await ensureColumn(db, 'assigned_jobs_cache', 'user_id', 'INTEGER');
   await ensureColumn(db, 'preferences_cache', 'user_id', 'INTEGER');
+  await ensureColumn(db, 'job_completion_parts', 'from_shop', 'INTEGER NOT NULL DEFAULT 0');
 
   // Operates on `db` directly rather than through getDb()/runTransaction()
   // — both would deadlock here, since they await the very setup this
@@ -480,6 +481,25 @@ export async function addCompletionPart(clientId, completionClientId, partId, qu
   );
 }
 
+// "Shop part?" — whether this part came out of shop stock (only those get
+// deducted from inventory when the completion is submitted).
+export async function setCompletionPartFromShop(clientId, fromShop) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE job_completion_parts SET from_shop = ?, synced = 0 WHERE client_id = ?`, [
+    fromShop ? 1 : 0,
+    clientId,
+  ]);
+}
+
+// Once a submit has synced, the server holds exactly this completion's
+// parts list (it reconciles against the list sent with the submit).
+export async function markCompletionPartsSynced(completionClientId) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE job_completion_parts SET synced = 1 WHERE job_completion_client_id = ?`, [
+    completionClientId,
+  ]);
+}
+
 export async function removeCompletionPart(clientId) {
   const db = await getDb();
   await db.runAsync(`DELETE FROM job_completion_parts WHERE client_id = ?`, [clientId]);
@@ -505,13 +525,15 @@ export async function markCompletionPartSynced(clientId, serverId) {
 }
 
 // Only parts whose parent completion is already synced (and belongs to the
-// active account) can sync themselves.
+// active account) can sync themselves — and only while it's still open. A
+// submitted completion's parts travel with the submit instead (the server
+// rejects individual part syncs after submit, which would just retry forever).
 export async function getUnsyncedPartsWithSyncedParent() {
   const db = await getDb();
   return db.getAllAsync(
     `SELECT jcp.* FROM job_completion_parts jcp
      JOIN job_completions jc ON jc.client_id = jcp.job_completion_client_id
-     WHERE jcp.synced = 0 AND jc.synced = 1 AND jc.user_id = ?`,
+     WHERE jcp.synced = 0 AND jc.synced = 1 AND jc.submitted_at IS NULL AND jc.user_id = ?`,
     [activeUserId]
   );
 }

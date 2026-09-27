@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
+import { IconButton, Text, useTheme } from 'react-native-paper';
 import { ListRow, SectionHeader, EmptyState, spacing } from '../ui';
 
 function formatDate(dateStr) {
@@ -32,8 +32,9 @@ function Stat({ label, value, color }) {
 // Shared read-out for a timesheet's day-by-day and per-job hour breakdown —
 // used both by a tech viewing their own Timesheet and by an admin drilled
 // into a specific tech's from Admin Timesheet. `data` is whatever GET
-// /timesheet or GET /admin/timesheet/:userId returned.
-export default function TimesheetBody({ data }) {
+// /timesheet or GET /admin/timesheet/:userId returned. `onDeleteDay`, if
+// given (admin only), adds a trash icon to each Daily Hours row.
+export default function TimesheetBody({ data, onDeleteDay }) {
   const theme = useTheme();
   if (!data) return null;
 
@@ -56,7 +57,21 @@ export default function TimesheetBody({ data }) {
             key={day.date}
             title={formatDate(day.date)}
             subtitle={`Billable ${hrs(day.billable_hours)} · Non-billable ${hrs(day.non_billable_hours)}`}
-            trailing={<Text style={{ fontWeight: '700' }}>{hrs(day.daily_hours)}</Text>}
+            trailing={
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ fontWeight: '700' }}>{hrs(day.daily_hours)}</Text>
+                {onDeleteDay ? (
+                  <IconButton
+                    icon="delete-outline"
+                    size={20}
+                    iconColor={theme.colors.error}
+                    onPress={() => onDeleteDay(day.date, formatDate(day.date))}
+                    accessibilityLabel={`Delete hours for ${formatDate(day.date)}`}
+                    style={{ margin: 0, marginLeft: spacing.xs }}
+                  />
+                ) : null}
+              </View>
+            }
           />
         ))
       )}
