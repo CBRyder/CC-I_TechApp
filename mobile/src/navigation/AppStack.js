@@ -24,6 +24,7 @@ import AdminTimesheetScreen from '../screens/admin/AdminTimesheetScreen';
 import AdminTechTimesheetScreen from '../screens/admin/AdminTechTimesheetScreen';
 import SupervisorHomeScreen from '../screens/supervisor/SupervisorHomeScreen';
 import InventoryScreen from '../screens/inventory/InventoryScreen';
+import InventoryListScreen from '../screens/inventory/InventoryListScreen';
 import InventoryPartScreen from '../screens/inventory/InventoryPartScreen';
 import PurchaseOrderScreen from '../screens/inventory/PurchaseOrderScreen';
 import { useAuth } from '../context/AuthContext';
@@ -167,6 +168,11 @@ export default function AppStack() {
       {canManageInventory && (
         <>
           <Stack.Screen name="Inventory" component={InventoryScreen} options={{ title: 'Inventory' }} />
+          <Stack.Screen
+            name="InventoryList"
+            component={InventoryListScreen}
+            options={{ title: 'Inventory List' }}
+          />
           <Stack.Screen
             name="InventoryPart"
             component={InventoryPartScreen}
