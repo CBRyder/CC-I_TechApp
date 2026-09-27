@@ -16,3 +16,29 @@ export function currentWorkWeek() {
   end.setDate(start.getDate() + 6);
   return { start: toLocalDateString(start), end: toLocalDateString(end) };
 }
+
+// --- plain YYYY-MM-DD date helpers (local calendar dates, no time zone
+// math — same convention as the timesheet endpoints) ---
+
+function parseLocal(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+export function todayString() {
+  return toLocalDateString(new Date());
+}
+
+export function addDays(dateStr, days) {
+  const d = parseLocal(dateStr);
+  d.setDate(d.getDate() + days);
+  return toLocalDateString(d);
+}
+
+// The Wed–Tue payroll week that contains `dateStr`.
+export function workWeekOf(dateStr) {
+  const d = parseLocal(dateStr);
+  const daysSinceWednesday = (d.getDay() - 3 + 7) % 7;
+  const start = addDays(dateStr, -daysSinceWednesday);
+  return { start, end: addDays(start, 6) };
+}

@@ -33,8 +33,11 @@ function Stat({ label, value, color }) {
 // used both by a tech viewing their own Timesheet and by an admin drilled
 // into a specific tech's from Admin Timesheet. `data` is whatever GET
 // /timesheet or GET /admin/timesheet/:userId returned. `onDeleteDay`, if
-// given (admin only), adds a trash icon to each Daily Hours row.
-export default function TimesheetBody({ data, onDeleteDay }) {
+// given (admin only), adds a trash icon to each Daily Hours row. `period`
+// ('day' | 'week' | 'range') only changes the empty-state wording.
+const PERIOD_WORDS = { day: 'on this day', week: 'this work week', range: 'in this range' };
+
+export default function TimesheetBody({ data, onDeleteDay, period = 'range' }) {
   const theme = useTheme();
   if (!data) return null;
 
@@ -50,7 +53,7 @@ export default function TimesheetBody({ data, onDeleteDay }) {
 
       <SectionHeader>Daily Hours</SectionHeader>
       {days.length === 0 ? (
-        <EmptyState message="No clocked hours in this range." />
+        <EmptyState message={`No clocked hours ${PERIOD_WORDS[period]}.`} />
       ) : (
         days.map((day) => (
           <ListRow
@@ -78,7 +81,7 @@ export default function TimesheetBody({ data, onDeleteDay }) {
 
       <SectionHeader>Job Hours</SectionHeader>
       {jobs.length === 0 ? (
-        <EmptyState message="No job hours logged in this range." />
+        <EmptyState message={`No job hours logged ${PERIOD_WORDS[period]}.`} />
       ) : (
         jobs.map((job) => (
           <ListRow
