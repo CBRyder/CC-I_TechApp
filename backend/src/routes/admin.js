@@ -791,10 +791,211 @@ router.get('/timesheet/:userId', requireAuth, requireRole('admin'), async (req, 
     if (!userResult.rows.length) return res.status(404).json({ error: 'User not found' });
 
     const data = await buildTimesheet(userId, range.start, range.end);
-    res.json({ ...data, user: userResult.rows[0] });
+    const entriesResult = await pool.query(
+      `${TIME_ENTRY_INFO_SQL}
+       WHERE te.user_id = $1 AND (te.clock_in_at AT TIME ZONE 'UTC')::date BETWEEN $2 AND $3
+       ORDER BY te.clock_in_at`,
+      [userId, range.start, range.end]
+    );
+    res.json({ ...data, entries: entriesResult.rows.map(entryRow), user: userResult.rows[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to build timesheet' });
+  }
+});
+
+// One row per clock-in/clock-out, plus the job numbers of any completed
+// jobs logged inside it. Bucketed by the same UTC date as buildTimesheet so
+// a day's entries always line up with that day's Daily Hours row.
+const TIME_ENTRY_INFO_SQL = `
+  SELECT te.id, te.user_id, te.clock_in_at, te.clock_out_at,
+         to_char(te.clock_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+         EXTRACT(EPOCH FROM (COALESCE(te.clock_out_at, now()) - te.clock_in_at)) / 3600.0 AS hours,
+         ARRAY(
+           SELECT DISTINCT j.job_number
+           FROM job_segments js
+           JOIN job_completions jc ON jc.job_segment_id = js.id
+           JOIN jobs j ON j.id = js.job_id
+           WHERE js.time_entry_id = te.id
+         ) AS completed_jobs
+  FROM time_entries te`;
+
+function entryRow(r) {
+  return {
+    id: r.id,
+    date: r.date,
+    clock_in_at: r.clock_in_at,
+    clock_out_at: r.clock_out_at,
+    hours: Number(r.hours),
+    completed_jobs: r.completed_jobs,
+  };
+}
+
+// Why an entry can't be deleted, or null if it can:
+//   - still clocked in: the tech's phone owns that open entry and would
+//     just re-create it (upsert by client_id) on its next clock-out sync.
+//   - holds a completed job: job_completions (summary/parts/photos/PO)
+//     hangs off job_segments, and the visit's Completed status is derived
+//     from that link — deleting the hours would take the job record with it.
+function entryBlockReason(r) {
+  if (!r.clock_out_at) return 'clocked_in';
+  if (r.completed_jobs.length) return 'completed_job';
+  return null;
+}
+
+// Shared by the single-entry, date-range, and all-time deletes. `where` is
+// the filter on `te`, with its params starting at $1. Everything deletable
+// goes in one transaction (legacy timesheet_entries → job_segments →
+// time_entries, in FK order); blocked entries are left alone and reported
+// back as `skipped` so the admin sees exactly what stayed and why.
+async function deleteTimeEntries({ where, params }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(`${TIME_ENTRY_INFO_SQL} WHERE ${where} FOR UPDATE OF te`, params);
+
+    const deletable = [];
+    const skipped = [];
+    for (const r of result.rows) {
+      const reason = entryBlockReason(r);
+      if (reason) skipped.push({ ...entryRow(r), reason });
+      else deletable.push(r);
+    }
+
+    const ids = deletable.map((r) => r.id);
+    if (ids.length) {
+      await client.query(
+        `DELETE FROM timesheet_entries
+         WHERE job_segment_id IN (SELECT id FROM job_segments WHERE time_entry_id = ANY($1))`,
+        [ids]
+      );
+      await client.query('DELETE FROM job_segments WHERE time_entry_id = ANY($1)', [ids]);
+      await client.query('DELETE FROM time_entries WHERE id = ANY($1)', [ids]);
+    }
+    await client.query('COMMIT');
+
+    return {
+      found: result.rows.length,
+      deleted_ids: ids,
+      deleted_hours: deletable.reduce((sum, r) => sum + Number(r.hours), 0),
+      skipped,
+    };
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+function deleteSummary(result) {
+  return {
+    deleted_count: result.deleted_ids.length,
+    deleted_hours: result.deleted_hours,
+    skipped: result.skipped,
+  };
+}
+
+// Delete a single clock-in/clock-out entry (and the travel/work segments
+// logged inside it).
+router.delete('/time-entries/:entryId', requireAuth, requireRole('admin'), async (req, res) => {
+  const entryId = Number(req.params.entryId);
+  if (!Number.isInteger(entryId) || entryId <= 0) {
+    return res.status(400).json({ error: 'Invalid entryId' });
+  }
+  try {
+    const result = await deleteTimeEntries({ where: 'te.id = $1', params: [entryId] });
+    if (!result.found) return res.status(404).json({ error: 'Time entry not found' });
+
+    const skip = result.skipped[0];
+    if (skip) {
+      const error =
+        skip.reason === 'clocked_in'
+          ? 'This tech is still clocked in on this entry. Delete it after they clock out.'
+          : `This entry includes completed job ${skip.completed_jobs.join(', ')}, so it was kept.`;
+      return res.status(409).json({ error, reason: skip.reason, completed_jobs: skip.completed_jobs });
+    }
+
+    await audit({
+      actorUserId: req.user.userId,
+      action: 'time_entries_deleted',
+      resourceType: 'time_entry',
+      resourceId: entryId,
+      ipAddress: req.ip,
+      metadata: { scope: 'entry', deleted_hours: result.deleted_hours },
+    });
+    res.json(deleteSummary(result));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete time entry' });
+  }
+});
+
+// Delete every entry for a tech whose clock-in falls in start..end — the
+// app uses this for both a single day (start = end) and a whole work week.
+router.delete('/timesheet/:userId', requireAuth, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.userId);
+  const range = parseRange(req.query);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
+  if (!range) {
+    return res.status(400).json({ error: 'start and end (YYYY-MM-DD, end >= start, 92 days max) are required' });
+  }
+  try {
+    const result = await deleteTimeEntries({
+      where: `te.user_id = $1 AND (te.clock_in_at AT TIME ZONE 'UTC')::date BETWEEN $2 AND $3`,
+      params: [userId, range.start, range.end],
+    });
+    await audit({
+      actorUserId: req.user.userId,
+      targetUserId: userId,
+      action: 'time_entries_deleted',
+      resourceType: 'time_entry',
+      ipAddress: req.ip,
+      metadata: {
+        scope: 'range',
+        start: range.start,
+        end: range.end,
+        deleted_ids: result.deleted_ids,
+        deleted_hours: result.deleted_hours,
+        skipped_ids: result.skipped.map((s) => s.id),
+      },
+    });
+    res.json(deleteSummary(result));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete hours' });
+  }
+});
+
+// Delete every entry a tech has ever logged (same skip rules as above).
+router.delete('/timesheet/:userId/all', requireAuth, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
+  try {
+    const result = await deleteTimeEntries({ where: 'te.user_id = $1', params: [userId] });
+    await audit({
+      actorUserId: req.user.userId,
+      targetUserId: userId,
+      action: 'time_entries_deleted',
+      resourceType: 'time_entry',
+      ipAddress: req.ip,
+      metadata: {
+        scope: 'all',
+        deleted_ids: result.deleted_ids,
+        deleted_hours: result.deleted_hours,
+        skipped_ids: result.skipped.map((s) => s.id),
+      },
+    });
+    res.json(deleteSummary(result));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete hours' });
   }
 });
 

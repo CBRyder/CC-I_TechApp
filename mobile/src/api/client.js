@@ -139,6 +139,23 @@ export function getAdminTechTimesheet(userId, start, end, accessToken) {
   return request(`/admin/timesheet/${userId}?start=${start}&end=${end}`, { accessToken });
 }
 
+// Deletes resolve to { deleted_count, deleted_hours, skipped } — entries
+// still clocked in or holding a completed job are skipped, not deleted.
+export function deleteTimeEntry(entryId, accessToken) {
+  return request(`/admin/time-entries/${entryId}`, { method: 'DELETE', accessToken });
+}
+
+export function deleteTechHoursInRange(userId, start, end, accessToken) {
+  return request(`/admin/timesheet/${userId}?start=${start}&end=${end}`, {
+    method: 'DELETE',
+    accessToken,
+  });
+}
+
+export function deleteAllTechHours(userId, accessToken) {
+  return request(`/admin/timesheet/${userId}/all`, { method: 'DELETE', accessToken });
+}
+
 // --- Offline-first sync ---
 
 export function syncTimeEntry(payload, accessToken) {
