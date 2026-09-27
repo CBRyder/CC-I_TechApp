@@ -46,6 +46,11 @@ export const stateColors = {
   in_progress: '#FF6A1A',
   shop_return: '#3FA34D',
   completed: '#3FA34D',
+  // Supplier purchase order statuses (see backend/src/routes/inventory.js).
+  draft: '#9CA3AF',
+  ordered: '#3B82F6',
+  received: '#3FA34D',
+  cancelled: '#E14B3D',
 };
 
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };

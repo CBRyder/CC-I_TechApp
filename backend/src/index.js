@@ -10,6 +10,7 @@ const meRoutes = require('./routes/me');
 const preferencesRoutes = require('./routes/preferences');
 const timesheetRoutes = require('./routes/timesheet');
 const adminRoutes = require('./routes/admin');
+const inventoryRoutes = require('./routes/inventory');
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use('/me', meRoutes);
 app.use('/preferences', preferencesRoutes);
 app.use('/timesheet', timesheetRoutes);
 app.use('/admin', adminRoutes);
+app.use('/inventory', inventoryRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

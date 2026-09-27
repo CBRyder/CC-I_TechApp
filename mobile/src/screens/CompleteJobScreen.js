@@ -16,6 +16,7 @@ export default function CompleteJobScreen({ route, navigation }) {
     getCompletionPhotos,
     setCompletionSummary,
     removePartFromCompletion,
+    setPartFromShop,
     addPhotoToCompletion,
     submitCompletion,
   } = useTracking();
@@ -31,7 +32,6 @@ export default function CompleteJobScreen({ route, navigation }) {
     setCompletion(c);
     setSummary(c?.visit_summary || '');
     setParts(await getCompletionParts(completionClientId));
-    const photos = await getCompletionPhotos(completionClientId);
     setPhotos(await getCompletionPhotos(completionClientId));
   }, [completionClientId, getJobCompletion, getCompletionParts, getCompletionPhotos]);
 
@@ -43,8 +43,18 @@ export default function CompleteJobScreen({ route, navigation }) {
     }, [load])
   );
 
-  const handleAddPhoto = (kind) => {
-    Alert.alert('Add Photo', undefined, [
+  // One shared photo row, but the server still files each photo as a
+  // before or after shot — so ask which, then where it's coming from.
+  const handleAddPhoto = () => {
+    Alert.alert('Add Photo', 'Is this a before or after photo?', [
+      { text: 'Before', onPress: () => chooseSource('before') },
+      { text: 'After', onPress: () => chooseSource('after') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const chooseSource = (kind) => {
+    Alert.alert(kind === 'before' ? 'Before Photo' : 'After Photo', undefined, [
       { text: 'Take Photo', onPress: () => pickAndAdd('camera', kind) },
       { text: 'Choose from Library', onPress: () => pickAndAdd('library', kind) },
       { text: 'Cancel', style: 'cancel' },
@@ -52,10 +62,15 @@ export default function CompleteJobScreen({ route, navigation }) {
   };
 
   const pickAndAdd = async (source, kind) => {
-    const uri = await capturePhoto(source);
+    const uris = await capturePhotos(source);
     for (const uri of uris) {
-    await addPhotoToCompletion(completionClientId, 'photo', uri);
+      await addPhotoToCompletion(completionClientId, kind, uri);
     }
+    load();
+  };
+
+  const handleToggleShopPart = async (part) => {
+    await setPartFromShop(part.client_id, !part.from_shop);
     load();
   };
 
@@ -92,7 +107,7 @@ export default function CompleteJobScreen({ route, navigation }) {
       <Text variant="titleMedium" style={styles.sectionTitle}>
         Before/After Photos
       </Text>
-      <PhotoRow photos={photos} onAdd={() => handleAddPhoto} />
+      <PhotoRow photos={photos} onAdd={handleAddPhoto} />
 
       <Text variant="titleMedium" style={styles.sectionTitle}>
         Visit Summary
@@ -118,6 +133,16 @@ export default function CompleteJobScreen({ route, navigation }) {
             <Text style={styles.partText}>
               {part.quantity}x {part.name} ({part.unit})
             </Text>
+            <Text style={styles.shopLabel}>Shop part?</Text>
+            <Button
+              mode={part.from_shop ? 'contained' : 'outlined'}
+              compact
+              onPress={() => handleToggleShopPart(part)}
+              style={styles.shopToggle}
+              accessibilityLabel={`Shop part: ${part.from_shop ? 'yes' : 'no'}. Tap to change.`}
+            >
+              {part.from_shop ? 'Yes' : 'No'}
+            </Button>
             <IconButton icon="close" size={18} onPress={() => handleRemovePart(part.client_id)} />
           </View>
         ))
@@ -182,6 +207,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   partText: { flex: 1 },
+  shopLabel: { fontSize: 12, opacity: 0.7, marginRight: 6 },
+  shopToggle: { minWidth: 64 },
   addPartButton: { marginTop: 8 },
   submitButton: { marginTop: 32 },
 });

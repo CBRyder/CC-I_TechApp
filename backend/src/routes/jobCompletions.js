@@ -2,17 +2,28 @@ const express = require('express');
 const pool = require('../db');
 const requireAuth = require('../middleware/auth');
 const { getPresignedUploadUrl, getPresignedDownloadUrl } = require('../r2');
+const { moveStock } = require('./inventory');
 
 const router = express.Router();
 
 // Upsert the completion record for a finished job segment. The time marker
 // itself (job_segments.ended_at) is already recorded the instant Finish is
 // tapped — this is the supplementary detail synced on its own schedule.
+//
+// On the submit itself, the device also sends its final `parts` list. The
+// server makes its own copy match it exactly (parts removed on the device
+// after they'd synced get dropped here — nothing else deletes them), then
+// takes every "shop part" out of shop stock. That only happens on the
+// unsubmitted → submitted transition, which can't happen twice, so a
+// retried submit never double-deducts.
 router.put('/sync', requireAuth, async (req, res) => {
-  const { client_id, job_segment_client_id, visit_summary, submitted_at } = req.body;
+  const { client_id, job_segment_client_id, visit_summary, submitted_at, parts } = req.body;
 
   if (!client_id || !job_segment_client_id) {
     return res.status(400).json({ error: 'client_id and job_segment_client_id are required' });
+  }
+  if (parts !== undefined && !Array.isArray(parts)) {
+    return res.status(400).json({ error: 'parts must be an array' });
   }
 
   try {
@@ -45,26 +56,88 @@ router.put('/sync', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'This visit is already completed and can no longer be changed' });
     }
 
-    const result = await pool.query(
-      `INSERT INTO job_completions (job_segment_id, user_id, client_id, visit_summary, submitted_at, synced_at)
-       VALUES ($1, $2, $3, $4, $5, now())
-       ON CONFLICT (user_id, client_id) DO UPDATE
-         SET visit_summary = EXCLUDED.visit_summary,
-             submitted_at = EXCLUDED.submitted_at,
-             synced_at = now()
-       RETURNING id, client_id, job_segment_id, visit_summary, submitted_at, synced_at`,
-      [jobSegmentId, req.user.userId, client_id, visit_summary || null, submitted_at || null]
-    );
-    res.json(result.rows[0]);
+    const client = await pool.connect();
+    let row;
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO job_completions (job_segment_id, user_id, client_id, visit_summary, submitted_at, synced_at)
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (user_id, client_id) DO UPDATE
+           SET visit_summary = EXCLUDED.visit_summary,
+               submitted_at = EXCLUDED.submitted_at,
+               synced_at = now()
+         RETURNING id, client_id, job_segment_id, visit_summary, submitted_at, synced_at`,
+        [jobSegmentId, req.user.userId, client_id, visit_summary || null, submitted_at || null]
+      );
+      row = result.rows[0];
+
+      if (submitted_at) {
+        if (parts) await reconcileParts(client, row.id, req.user.userId, parts);
+        const shopParts = await client.query(
+          `SELECT part_id, SUM(quantity)::int AS quantity
+           FROM job_completion_parts
+           WHERE job_completion_id = $1 AND from_shop
+           GROUP BY part_id`,
+          [row.id]
+        );
+        for (const part of shopParts.rows) {
+          await moveStock(client, {
+            partId: part.part_id,
+            change: -part.quantity,
+            reason: 'job_used',
+            userId: req.user.userId,
+            jobCompletionId: row.id,
+          });
+        }
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+    res.json(row);
   } catch (err) {
+    if (err instanceof PartsError) return res.status(400).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: 'Sync failed' });
   }
 });
 
+class PartsError extends Error {}
+
+// Makes the server's parts for a completion exactly match the device's
+// final list (upsert what's there, delete what isn't).
+async function reconcileParts(client, jobCompletionId, userId, parts) {
+  const clientIds = [];
+  for (const p of parts) {
+    const qty = p.quantity == null ? 1 : Number(p.quantity);
+    if (!p.client_id || !Number.isInteger(Number(p.part_id)) || !Number.isInteger(qty) || qty <= 0) {
+      throw new PartsError('Each part needs client_id, part_id, and a whole-number quantity above 0');
+    }
+    clientIds.push(p.client_id);
+    await client.query(
+      `INSERT INTO job_completion_parts (job_completion_id, part_id, quantity, client_id, user_id, from_shop, synced_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
+       ON CONFLICT (user_id, client_id) DO UPDATE
+         SET quantity = EXCLUDED.quantity, from_shop = EXCLUDED.from_shop, synced_at = now()`,
+      [jobCompletionId, Number(p.part_id), qty, p.client_id, userId, !!p.from_shop]
+    );
+  }
+  await client.query(
+    `DELETE FROM job_completion_parts
+     WHERE job_completion_id = $1 AND NOT (client_id = ANY($2::text[]))`,
+    [jobCompletionId, clientIds]
+  );
+}
+
 // Upsert one "part used" line against a completion.
 router.put('/parts/sync', requireAuth, async (req, res) => {
-  const { client_id, job_completion_client_id, part_id, quantity } = req.body;
+  const { client_id, job_completion_client_id, part_id, quantity, from_shop } = req.body;
 
   if (!client_id || !job_completion_client_id || !part_id) {
     return res
@@ -86,11 +159,12 @@ router.put('/parts/sync', requireAuth, async (req, res) => {
     const jobCompletionId = completionResult.rows[0].id;
 
     const result = await pool.query(
-      `INSERT INTO job_completion_parts (job_completion_id, part_id, quantity, client_id, user_id, synced_at)
-       VALUES ($1, $2, $3, $4, $5, now())
-       ON CONFLICT (user_id, client_id) DO UPDATE SET quantity = EXCLUDED.quantity, synced_at = now()
-       RETURNING id, client_id, part_id, quantity, synced_at`,
-      [jobCompletionId, part_id, quantity || 1, client_id, req.user.userId]
+      `INSERT INTO job_completion_parts (job_completion_id, part_id, quantity, client_id, user_id, from_shop, synced_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
+       ON CONFLICT (user_id, client_id) DO UPDATE
+         SET quantity = EXCLUDED.quantity, from_shop = EXCLUDED.from_shop, synced_at = now()
+       RETURNING id, client_id, part_id, quantity, from_shop, synced_at`,
+      [jobCompletionId, part_id, quantity || 1, client_id, req.user.userId, !!from_shop]
     );
     res.json(result.rows[0]);
   } catch (err) {

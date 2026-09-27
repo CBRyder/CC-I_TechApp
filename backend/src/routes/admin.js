@@ -214,7 +214,7 @@ router.delete('/sessions/:sessionId', requireAuth, requireRole('admin'), async (
   }
 });
 
-const VALID_ROLES = ['tech', 'admin'];
+const VALID_ROLES = ['tech', 'admin', 'supervisor'];
 
 // Replaces a user's full role set in one call (checkboxes on the admin
 // screen, not incremental grant/revoke calls) — e.g. { roles: ['tech',

@@ -84,6 +84,17 @@ export default function HomeScreen({ navigation }) {
         </Button>
       )}
 
+      {user?.roles?.includes('supervisor') && !user?.roles?.includes('admin') && (
+        <Button
+          mode="outlined"
+          icon="package-variant-closed"
+          onPress={() => navigation.navigate('Inventory')}
+          style={styles.adminButton}
+        >
+          Inventory &amp; POs
+        </Button>
+      )}
+
       {!isClockedIn && (
         <>
           <Button mode="contained" onPress={clockIn} style={styles.primaryButton}>

@@ -246,6 +246,14 @@ export function TrackingProvider({ children }) {
     await local.removeCompletionPart(partClientId);
   }, []);
 
+  const setPartFromShop = useCallback(
+    async (partClientId, fromShop) => {
+      await local.setCompletionPartFromShop(partClientId, fromShop);
+      triggerSync();
+    },
+    [triggerSync]
+  );
+
   const addPhotoToCompletion = useCallback(
     async (completionClientId, kind, localUri) => {
       const clientId = uuidv4();
@@ -295,6 +303,7 @@ export function TrackingProvider({ children }) {
     getCompletionPhotos: local.getCompletionPhotos,
     addPartToCompletion,
     removePartFromCompletion,
+    setPartFromShop,
     addPhotoToCompletion,
     setCompletionSummary,
     submitCompletion,
