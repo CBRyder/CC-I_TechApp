@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/client';
@@ -44,13 +45,20 @@ export default function AdminVisitsScreen({ navigation }) {
     [accessToken]
   );
 
-  useEffect(() => {
-    load(query);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken]);
+  // Reload every time this screen comes back into view — deleting,
+  // reopening, or setting a PO on a visit's detail screen changes this
+  // list, and it used to keep showing the stale copy. Keeps the current
+  // search (read through a ref so typing doesn't re-trigger this).
+  const queryRef = useRef(query);
+  useFocusEffect(
+    useCallback(() => {
+      load(queryRef.current);
+    }, [load])
+  );
 
   const handleSearch = (text) => {
     setQuery(text);
+    queryRef.current = text;
     load(text);
   };
 
